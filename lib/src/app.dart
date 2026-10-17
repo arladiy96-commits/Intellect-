@@ -13,7 +13,7 @@ class MyAiApp extends StatelessWidget {
     const base = Color(0xFF101827);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Мой ИИ',
+      title: 'Бабуин',
       theme: ThemeData(
         useMaterial3: true,
         brightness: Brightness.dark,
@@ -49,7 +49,7 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('МОЙ ИИ')),
+      appBar: AppBar(title: const Text('БАБУИН')),
       body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
