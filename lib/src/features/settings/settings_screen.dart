@@ -32,7 +32,7 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        const Center(child: Text('МОЙ ИИ · первоначальный каркас 0.1')),
+        const Center(child: Text('БАБУИН · первоначальный каркас 0.1')),
       ],
     );
   }
