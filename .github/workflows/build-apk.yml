@@ -12,8 +12,9 @@ concurrency:
 
 jobs:
   build:
-    name: Build and publish APK to Releases
+    name: Build native llama.cpp and publish APK
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
@@ -29,23 +30,36 @@ jobs:
         with:
           channel: stable
           cache: true
-      - name: Verify bootstrap completed
+      - name: Install Android NDK and CMake
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1"
+      - name: Fetch llama.cpp source for Android native build
         shell: bash
         run: |
-          test -f pubspec.yaml || { echo "::error::First run Flutter Bootstrap."; exit 1; }
-          test -d android || { echo "::error::Android project is missing."; exit 1; }
-      - name: Install dependencies and run checks
+          set -euo pipefail
+          # Reproducible source revision, verified against the JNI API used here.
+          LLAMA_REV=f2f667b02dc76d675395ae3b14546c8108d26387
+          LLAMA_DIR=android/app/src/main/cpp/llama.cpp
+          mkdir -p "$LLAMA_DIR"
+          git -C "$LLAMA_DIR" init
+          git -C "$LLAMA_DIR" remote add origin https://github.com/ggml-org/llama.cpp.git
+          git -C "$LLAMA_DIR" fetch --depth 1 origin "$LLAMA_REV"
+          git -C "$LLAMA_DIR" checkout --detach FETCH_HEAD
+          test "$(git -C "$LLAMA_DIR" rev-parse HEAD)" = "$LLAMA_REV"
+      - name: Install dependencies and check Dart
         run: |
           flutter pub get
           flutter analyze
           flutter test
-      - name: Compile Android release APK
+      - name: Compile Android release APK (arm64-v8a)
         env:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
-          flutter build apk --release --build-name="0.1.${RUN_NUMBER}" --build-number="${RUN_NUMBER}"
-          cp build/app/outputs/flutter-apk/app-release.apk "moy-ai-v0.1.${RUN_NUMBER}.apk"
-      - name: Publish directly to GitHub Releases
+          flutter build apk --release --target-platform android-arm64 \
+            --build-name="0.2.${RUN_NUMBER}" --build-number="${RUN_NUMBER}"
+          cp build/app/outputs/flutter-apk/app-release.apk "moy-ai-v0.2.${RUN_NUMBER}.apk"
+      - name: Publish APK to GitHub Releases
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_NUMBER: ${{ github.run_number }}
@@ -53,14 +67,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.1.${RUN_NUMBER}"
+          TAG="v0.2.${RUN_NUMBER}"
           APK="moy-ai-${TAG}.apk"
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" "${APK}" --clobber
           else
             gh release create "${TAG}" "${APK}" \
               --target "${GITHUB_SHA}" \
-              --title "Мой ИИ ${TAG}" \
-              --notes "Ручная сборка Android APK. Первая версия — интерфейсный каркас; локальный движок llama.cpp пока не подключён. Тестовая подпись: для обновлений потребуется постоянный ключ." \
+              --title "Мой ИИ ${TAG} · Native Qwen" \
+              --notes "Ручная тестовая сборка. Native llama.cpp на Android ARM64. GGUF импортируется отдельно. Подпись пока тестовая." \
               --prerelease
           fi
