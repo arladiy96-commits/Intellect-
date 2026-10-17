@@ -1,0 +1,478 @@
+name: Flutter Bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: moy-ai-bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: Create Flutter structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate and commit app
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -e pubspec.yaml ]]; then
+            echo "::error::Flutter project already exists. Bootstrap is a one-time setup."
+            exit 1
+          fi
+          flutter create --platforms=android --project-name=moy_ai --org=ai.moy --android-language=kotlin .
+          python3 - <<'PYSEED'
+          from pathlib import Path
+          from textwrap import dedent
+
+          files = {
+          'lib/main.dart': '''
+          import 'package:flutter/material.dart';
+          import 'src/app.dart';
+
+          void main() {
+            WidgetsFlutterBinding.ensureInitialized();
+            runApp(const MyAiApp());
+          }
+          ''',
+          'lib/src/app.dart': '''
+          import 'package:flutter/material.dart';
+          import 'features/agents/agents_screen.dart';
+          import 'features/chat/chat_screen.dart';
+          import 'features/models/models_screen.dart';
+          import 'features/settings/settings_screen.dart';
+
+          class MyAiApp extends StatelessWidget {
+            const MyAiApp({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              const base = Color(0xFF101827);
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                title: 'Мой ИИ',
+                theme: ThemeData(
+                  useMaterial3: true,
+                  brightness: Brightness.dark,
+                  scaffoldBackgroundColor: base,
+                  colorScheme: ColorScheme.fromSeed(
+                    seedColor: const Color(0xFF87AFFF),
+                    brightness: Brightness.dark,
+                  ),
+                  appBarTheme: const AppBarTheme(
+                    backgroundColor: base,
+                    elevation: 0,
+                  ),
+                ),
+                home: const MainShell(),
+              );
+            }
+          }
+
+          class MainShell extends StatefulWidget {
+            const MainShell({super.key});
+
+            @override
+            State<MainShell> createState() => _MainShellState();
+          }
+
+          class _MainShellState extends State<MainShell> {
+            int _index = 0;
+
+            static const _pages = <Widget>[
+              ChatScreen(),
+              AgentsScreen(),
+              ModelsScreen(),
+              SettingsScreen(),
+            ];
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('МОЙ ИИ')),
+                body: IndexedStack(index: _index, children: _pages),
+                bottomNavigationBar: NavigationBar(
+                  selectedIndex: _index,
+                  onDestinationSelected: (value) => setState(() => _index = value),
+                  destinations: const [
+                    NavigationDestination(icon: Icon(Icons.chat_bubble_outline), label: 'Чат'),
+                    NavigationDestination(icon: Icon(Icons.smart_toy_outlined), label: 'Агенты'),
+                    NavigationDestination(icon: Icon(Icons.memory), label: 'Модели'),
+                    NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Настройки'),
+                  ],
+                ),
+              );
+            }
+          }
+          ''',
+          'lib/src/features/chat/chat_screen.dart': '''
+          import 'package:flutter/material.dart';
+
+          class ChatScreen extends StatefulWidget {
+            const ChatScreen({super.key});
+
+            @override
+            State<ChatScreen> createState() => _ChatScreenState();
+          }
+
+          class _ChatScreenState extends State<ChatScreen> {
+            final _controller = TextEditingController();
+
+            @override
+            void dispose() {
+              _controller.dispose();
+              super.dispose();
+            }
+
+            void _showEngineNotice() {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Локальный движок подключим следующим этапом.')),
+              );
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return Column(
+                children: [
+                  Expanded(
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.psychology_outlined, size: 70,
+                                color: Theme.of(context).colorScheme.primary),
+                            const SizedBox(height: 18),
+                            Text('Твой локальный искусственный интеллект',
+                                textAlign: TextAlign.center,
+                                style: Theme.of(context).textTheme.titleLarge),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Первая сборка интерфейса. Подключение llama.cpp, '
+                              'памяти и общения с Qwen будет следующим шагом.',
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: TextField(
+                        controller: _controller,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: 'Напиши сообщение…',
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            tooltip: 'Отправить',
+                            icon: const Icon(Icons.send_rounded),
+                            onPressed: _showEngineNotice,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }
+          }
+          ''',
+          'lib/src/features/agents/agents_screen.dart': '''
+          import 'package:flutter/material.dart';
+
+          class AgentsScreen extends StatelessWidget {
+            const AgentsScreen({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              const agents = [
+                (Icons.code, 'Программист', 'Код, проекты и проверка решений'),
+                (Icons.travel_explore, 'Исследователь', 'Поиск и анализ информации'),
+                (Icons.description_outlined, 'Документы', 'Работа с файлами и данными'),
+                (Icons.smartphone, 'Android-агент', 'Экран, приложения и разрешённые действия'),
+              ];
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text('ИИ-агенты', style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  const Text('Заготовки. Исполнение задач и разрешения добавим далее.'),
+                  const SizedBox(height: 12),
+                  for (final agent in agents)
+                    Card(
+                      child: ListTile(
+                        leading: Icon(agent.$1),
+                        title: Text(agent.$2),
+                        subtitle: Text(agent.$3),
+                        trailing: const Icon(Icons.lock_outline, size: 18),
+                      ),
+                    ),
+                ],
+              );
+            }
+          }
+          ''',
+          'lib/src/features/models/models_screen.dart': '''
+          import 'package:flutter/material.dart';
+
+          class ModelsScreen extends StatelessWidget {
+            const ModelsScreen({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text('Модели', style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  const Text('Каталог для будущего локального движка. Здесь пока нет запущенной модели.'),
+                  const SizedBox(height: 12),
+                  const Card(
+                    child: ListTile(
+                      leading: Icon(Icons.memory),
+                      title: Text('Qwen3.5 4B · Q4_K_M'),
+                      subtitle: Text('Основная модель · подключение впереди'),
+                    ),
+                  ),
+                  const Card(
+                    child: ListTile(
+                      leading: Icon(Icons.bolt_outlined),
+                      title: Text('Qwen3 1.7B'),
+                      subtitle: Text('Быстрая модель · подключение впереди'),
+                    ),
+                  ),
+                ],
+              );
+            }
+          }
+          ''',
+          'lib/src/features/settings/settings_screen.dart': '''
+          import 'package:flutter/material.dart';
+
+          class SettingsScreen extends StatelessWidget {
+            const SettingsScreen({super.key});
+
+            @override
+            Widget build(BuildContext context) {
+              return ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Text('Настройки', style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 12),
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.shield_outlined),
+                    title: Text('Разрешения агентов'),
+                    subtitle: Text('Добавим перед включением управления Android'),
+                  )),
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.tune),
+                    title: Text('Настройки генерации'),
+                    subtitle: Text('Контекст, температура, производительность'),
+                  )),
+                  const Card(child: ListTile(
+                    leading: Icon(Icons.history),
+                    title: Text('История действий'),
+                    subtitle: Text('Здесь появится журнал работы агентов'),
+                  )),
+                  const SizedBox(height: 20),
+                  const Center(child: Text('МОЙ ИИ · первоначальный каркас 0.1')),
+                ],
+              );
+            }
+          }
+          ''',
+          'lib/src/core/ai/ai_engine.dart': '''
+          /// Contract for both native llama.cpp and optional cloud providers.
+          abstract interface class AiEngine {
+            Future<void> loadModel(String modelPath);
+            Stream<String> streamReply(List<AiMessage> conversation);
+            Future<void> unloadModel();
+          }
+
+          class AiMessage {
+            final String role;
+            final String text;
+            const AiMessage({required this.role, required this.text});
+          }
+          ''',
+          'lib/src/core/ai/llama_native_engine.dart': '''
+          import 'ai_engine.dart';
+
+          /// Future JNI/FFI integration point. This bootstrap does NOT run GGUF models.
+          class LlamaNativeEngine implements AiEngine {
+            @override
+            Future<void> loadModel(String modelPath) =>
+                Future.error(UnimplementedError('llama.cpp Android integration pending'));
+
+            @override
+            Stream<String> streamReply(List<AiMessage> conversation) =>
+                Stream.error(UnimplementedError('llama.cpp Android integration pending'));
+
+            @override
+            Future<void> unloadModel() async {}
+          }
+          ''',
+          'lib/src/core/agents/agent_definition.dart': '''
+          class AgentDefinition {
+            final String id;
+            final String title;
+            final String instructions;
+            final Set<String> allowedTools;
+
+            const AgentDefinition({
+              required this.id,
+              required this.title,
+              required this.instructions,
+              this.allowedTools = const {},
+            });
+          }
+          ''',
+          'lib/src/core/agents/agent_tool.dart': '''
+          /// Tools need explicit permissions and a record of each action.
+          abstract interface class AgentTool {
+            String get id;
+            Future<ToolResult> execute(Map<String, Object?> arguments);
+          }
+
+          class ToolResult {
+            final bool success;
+            final String message;
+            const ToolResult({required this.success, required this.message});
+          }
+          ''',
+          'lib/src/core/android_control/android_control.dart': '''
+          /// Planned opt-in Android capabilities. No accessibility control is enabled yet.
+          abstract interface class AndroidControl {
+            Future<void> openApp(String packageName);
+            Future<void> tapAt(double x, double y);
+            Future<void> scroll(double dx, double dy);
+          }
+          ''',
+          'lib/src/core/memory/conversation_repository.dart': '''
+          import '../ai/ai_engine.dart';
+
+          /// Future storage API. No conversation data is persisted in bootstrap.
+          abstract interface class ConversationRepository {
+            Future<void> save(String conversationId, List<AiMessage> messages);
+            Future<List<AiMessage>> load(String conversationId);
+          }
+          ''',
+          'test/widget_test.dart': '''
+          import 'package:flutter/material.dart';
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:moy_ai/src/app.dart';
+
+          void main() {
+            testWidgets('App opens with four main sections', (tester) async {
+              await tester.pumpWidget(const MyAiApp());
+              expect(find.text('МОЙ ИИ'), findsOneWidget);
+              expect(find.byType(NavigationBar), findsOneWidget);
+              expect(find.text('Агенты'), findsOneWidget);
+            });
+          }
+          ''',
+          'docs/ARCHITECTURE.md': '''
+          # Мой ИИ — архитектура
+
+          - `lib/src/core/ai` — абстракция движка и будущая нативная интеграция llama.cpp.
+          - `lib/src/core/agents` — определения агентов, реестр инструментов, разрешения.
+          - `lib/src/core/android_control` — будущий Android AccessibilityService / MediaProjection через Kotlin.
+          - `lib/src/core/memory` — сохранение чатов и память.
+          - `lib/src/features` — экраны Flutter: чат, агенты, модели, настройки.
+          - `assets/models` — место для локальных моделей на устройстве (файлы GGUF НЕ коммитить).
+
+          Bootstrap создаёт компилируемый каркас интерфейса, НЕ функциональный ИИ.
+          Следующий этап: нативная llama.cpp-интеграция с GGUF, сохранение истории, выбор модели.
+          Android-управление — только с явными разрешениями, подтверждениями и журналом действий.
+          ''',
+          'docs/ROADMAP.md': '''
+          # Очерёдность разработки
+
+          1. Каркас Flutter/Android и ручная сборка APK в GitHub Releases.
+          2. Нативный движок llama.cpp без Termux; загрузка моделей GGUF из памяти телефона.
+          3. Настоящий чат, потоковая генерация, история, переключение моделей.
+          4. Память, база знаний, каталог инструментов.
+          5. Внутренние агенты и многошаговые задачи с проверками.
+          6. Android-агент: AccessibilityService, MediaProjection, права, журнал и подтверждения.
+          7. Защищённый удалённый доступ с явным согласием владельца.
+
+          Примечание: Android может ограничивать длительную фоновую работу. Проверим на устройстве.
+          ''',
+          'README.md': '''
+          # Мой ИИ
+
+          Android-приложение на Flutter для локальных моделей Qwen, памяти и ИИ-агентов.
+
+          ## Сборка через GitHub
+
+          1. **Actions → Flutter Bootstrap → Run workflow**: создаёт проект и сохраняет в `main`.
+          2. **Actions → Build APK → Run workflow**: собирает APK и публикует в **Releases**.
+
+          Оба workflow запускаются **только вручную**. GitHub Actions Artifacts не используются.
+
+          ## Текущее состояние
+
+          Первая версия — компилируемый UI-каркас. Общение с моделью НЕ подключено;
+          чтобы запустить Qwen без Termux, потребуется последующее внедрение llama.cpp в Android.
+
+          Содержимое `docs/` — план архитектуры; файлы GGUF и ключи подписи в Git не добавлять.
+
+          ## Подпись APK
+
+          Пока используется тестовая подпись Flutter-шаблона. При сборке на другом
+          GitHub-runner подпись может отличаться, и обновление приложения поверх старого APK
+          не установится. Перед регулярным использованием нужно настроить постоянный
+          ключ подписи через GitHub Secrets.
+          ''',
+          'assets/models/.gitkeep': '',
+          'assets/prompts/.gitkeep': '',
+          'assets/knowledge/.gitkeep': '',
+          'assets/images/.gitkeep': '',
+          'lib/src/core/security/.gitkeep': '',
+          'lib/src/core/tools/.gitkeep': '',
+          'android/app/src/main/kotlin/.gitkeep': '',
+          }
+
+          for filename, content in files.items():
+              path = Path(filename)
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(dedent(content).lstrip('\n'), encoding='utf-8')
+
+          manifest = Path('android/app/src/main/AndroidManifest.xml')
+          if manifest.exists():
+              data = manifest.read_text(encoding='utf-8')
+              data = data.replace('android:label="moy_ai"', 'android:label="Мой ИИ"')
+              manifest.write_text(data, encoding='utf-8')
+
+          ignore = Path('.gitignore')
+          with ignore.open('a', encoding='utf-8') as fh:
+              fh.write('\n# AI models and Android signing secrets\n*.gguf\n*.safetensors\n*.jks\n*.keystore\n/android/key.properties\n')
+          print(f'Created {len(files)} project files and placeholders.')
+          PYSEED
+          flutter pub get
+          dart format lib test
+          flutter analyze
+          flutter test
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "Bootstrap Мой ИИ Flutter Android app"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
