@@ -44,6 +44,11 @@ android {
             // Temporary development-only signature. Configure a persistent key
             // before installing multiple updates on the same phone.
             signingConfig = signingConfigs.getByName("debug")
+            // JNI calls emitToken(String) by name from C++. R8 must keep it.
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
