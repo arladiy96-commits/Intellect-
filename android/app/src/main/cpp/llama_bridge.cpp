@@ -123,23 +123,51 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
         t.emplace_back(as_string(env, jt));
         env->DeleteLocalRef(jr); env->DeleteLocalRef(jt);
     }
-    std::vector<llama_chat_message> messages;
-    messages.reserve(r.size());
-    for (size_t i=0; i<r.size(); ++i) messages.push_back({r[i].c_str(), t[i].c_str()});
-
-    const char * tmpl = llama_model_chat_template(g_model, nullptr);
-    if (!tmpl) tmpl = "chatml";
-    int size = llama_chat_apply_template(tmpl, messages.data(), (int)messages.size(), true, nullptr, 0);
-    if (size <= 0) return fail(env, "Не удалось применить шаблон диалога модели");
-    std::vector<char> formatted(size + 1);
-    if (llama_chat_apply_template(tmpl, messages.data(), (int)messages.size(), true, formatted.data(), formatted.size()) < 0) {
-        return fail(env, "Ошибка шаблона чата GGUF");
-    }
-    auto vocab = llama_model_get_vocab(g_model);
-    const int length = -llama_tokenize(vocab, formatted.data(), size, nullptr, 0, true, true);
-    if (length <= 0) return fail(env, "Ошибка токенизации запроса");
+    const auto vocab = llama_model_get_vocab(g_model);
     const int32_t context_capacity = (int32_t)llama_n_ctx(g_ctx);
-    if (length >= context_capacity - 8) return fail(env, "История слишком длинная для контекста 2048. Начни новый диалог.");
+    // Keep space for the assistant answer and template overhead. Unlike a
+    // character-count estimate, this checks the GGUF tokenizer exactly.
+    const int reserved = std::min<int>(std::max<int>(max_tokens, 1), 512) + 32;
+    const int prompt_budget = context_capacity - reserved;
+    if (prompt_budget < 128) return fail(env, "Недостаточный размер контекста модели");
+
+    std::vector<char> formatted;
+    int size = 0;
+    int length = 0;
+    while (true) {
+        std::vector<llama_chat_message> messages;
+        messages.reserve(r.size());
+        for (size_t i = 0; i < r.size(); ++i) messages.push_back({r[i].c_str(), t[i].c_str()});
+
+        const char * tmpl = llama_model_chat_template(g_model, nullptr);
+        if (!tmpl) tmpl = "chatml";
+        size = llama_chat_apply_template(tmpl, messages.data(), (int)messages.size(), true, nullptr, 0);
+        if (size <= 0) return fail(env, "Не удалось применить шаблон диалога модели");
+        formatted.resize(size + 1);
+        if (llama_chat_apply_template(tmpl, messages.data(), (int)messages.size(), true,
+                                      formatted.data(), formatted.size()) < 0) {
+            return fail(env, "Ошибка шаблона чата GGUF");
+        }
+        length = -llama_tokenize(vocab, formatted.data(), size, nullptr, 0, true, true);
+        if (length <= 0) return fail(env, "Ошибка токенизации запроса");
+        if (length <= prompt_budget) break;
+
+        // Persisted messages stay intact; discard only old prompt turns.
+        // Keep the built-in system prompt, and the newest user request.
+        if (r.size() <= 2) {
+            return fail(env, "Последний вопрос слишком длинный для контекста 2048. Сократи его.");
+        }
+        size_t oldest = 1;
+        if (r[oldest] == "system" && r.size() > 3) oldest = 2;
+        if (oldest >= r.size() - 1) oldest = 1; // discard optional memory first
+        const bool is_user = r[oldest] == "user";
+        r.erase(r.begin() + oldest);
+        t.erase(t.begin() + oldest);
+        if (is_user && oldest < r.size() - 1 && r[oldest] == "assistant") {
+            r.erase(r.begin() + oldest);
+            t.erase(t.begin() + oldest);
+        }
+    }
     std::vector<llama_token> prompt(length);
     if (llama_tokenize(vocab, formatted.data(), size, prompt.data(), prompt.size(), true, true) < 0) {
         return fail(env, "Ошибка токенизации диалога");
