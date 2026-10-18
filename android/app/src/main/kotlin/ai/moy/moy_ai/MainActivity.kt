@@ -36,6 +36,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        UpdateBridge.register(this, flutterEngine.dartExecutor.binaryMessenger)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, eventsName)
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(arguments: Any?, events: EventChannel.EventSink?) { eventSink = events }
