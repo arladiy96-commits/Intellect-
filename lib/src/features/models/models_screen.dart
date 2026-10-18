@@ -15,6 +15,7 @@ class ModelsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           Text('Локальные модели', style: Theme.of(context).textTheme.headlineSmall),
+          if (ai.cloudEnabled) const Text('Выбрано облако. Qwen не занимает оперативную память телефона.'),
           const SizedBox(height: 8),
           const Text('GGUF запускается непосредственно в приложении, без Termux и интернета.'),
           const SizedBox(height: 12),
@@ -80,7 +81,7 @@ class ModelsScreen extends StatelessWidget {
                           label: Text(layers == 0 ? 'CPU' :
                               layers == 99 ? 'GPU макс.' : 'GPU $layers'),
                           selected: ai.gpuLayers == layers,
-                          onSelected: ai.isBusy || ai.isGenerating || ai.isModelLoaded
+                          onSelected: ai.isBusy || ai.isGenerating || ai.isLocalModelLoaded
                               ? null
                               : (selected) async {
                                   if (!selected) return;
@@ -97,7 +98,7 @@ class ModelsScreen extends StatelessWidget {
                         ),
                     ],
                   ),
-                  if (ai.isModelLoaded)
+                  if (ai.isLocalModelLoaded)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(ai.appliedGpuLayers == 0
@@ -139,7 +140,7 @@ class ModelsScreen extends StatelessWidget {
                         ChoiceChip(
                           label: Text('$threads ${threads == 1 ? 'поток' : (threads == 2 || threads == 4) ? 'потока' : 'потоков'}'),
                           selected: ai.cpuThreads == threads,
-                          onSelected: ai.isBusy || ai.isGenerating || ai.isModelLoaded
+                          onSelected: ai.isBusy || ai.isGenerating || ai.isLocalModelLoaded
                               ? null
                               : (selected) async {
                                   if (!selected) return;
@@ -156,7 +157,7 @@ class ModelsScreen extends StatelessWidget {
                         ),
                     ],
                   ),
-                  if (ai.isModelLoaded)
+                  if (ai.isLocalModelLoaded)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
                       child: Text('Для смены потоков нажми «Стоп» у модели.'),
