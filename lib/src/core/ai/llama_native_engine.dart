@@ -45,6 +45,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     unawaited(refreshModels());
     unawaited(refreshCpuThreads());
     unawaited(refreshGpuSettings());
+    _cloud.addListener(_cloudChanged);
     unawaited(refreshCloud());
   }
 
@@ -53,6 +54,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   final _tokens = StreamController<Map<dynamic, dynamic>>.broadcast(sync: true);
   late final StreamSubscription<dynamic> _subscription;
   final _cloud = CloudAiEngine.instance;
+  void _cloudChanged() => notifyListeners();
 
   List<InstalledModel> models = [];
   String? activeModelPath;
@@ -73,6 +75,10 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   CloudProvider cloudProvider = CloudProvider.groq;
   int? get cloudRemainingRequests => _cloud.remainingRequests;
   int? get cloudRemainingTokens => _cloud.remainingTokens;
+  CloudDailyUsage get cloudTodayUsage => _cloud.dailyUsageFor(cloudProvider);
+  CloudTokenUsage? get cloudLastUsage => cloudTodayUsage.lastRequest;
+  GroqQuota? get cloudGroqQuota => _cloud.groqQuota?.model == cloudModel
+      ? _cloud.groqQuota : null;
   String get cloudProviderTitle => cloudProvider.title;
   bool get cloudGroqHasKey => _cloud.credentials.hasGroqKey;
   bool get cloudOpenRouterHasKey => _cloud.credentials.hasOpenRouterKey;
@@ -103,6 +109,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   Future<void> refreshCloud() async {
     try {
       await _cloud.credentials.load();
+      await _cloud.ensureUsageLoaded();
       cloudEnabled = _cloud.credentials.enabled;
       cloudHasKey = _cloud.credentials.hasKey;
       cloudModel = _cloud.credentials.model;
@@ -140,8 +147,6 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   Future<void> selectCloudProvider(CloudProvider provider) async {
     if (isBusy || isGenerating) throw StateError('Дождись завершения ответа');
     await _cloud.credentials.selectProvider(provider);
-    _cloud.remainingRequests = null;
-    _cloud.remainingTokens = null;
     await refreshCloud();
     status = cloudEnabled
         ? 'Облако · ${cloudProvider.title} · $cloudModel'
@@ -374,6 +379,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
 
   @override
   void dispose() {
+    _cloud.removeListener(_cloudChanged);
     unawaited(_subscription.cancel());
     unawaited(_tokens.close());
     super.dispose();
