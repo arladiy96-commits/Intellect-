@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <string>
@@ -75,7 +76,7 @@ void batch_set(llama_batch_ext * batch, const llama_token * tokens, int count, l
     llama_batch_ext_set_output_logits(batch, count - 1, true);
 }
 
-jstring native_load(JNIEnv * env, jobject, jstring jpath) {
+jstring native_load(JNIEnv * env, jobject, jstring jpath, jint requested_threads) {
     clear_model();
     const auto path = as_string(env, jpath);
     if (path.empty()) return fail(env, "Путь к GGUF пуст");
@@ -91,8 +92,9 @@ jstring native_load(JNIEnv * env, jobject, jstring jpath) {
     params.n_ctx = 2048;
     params.n_batch = 512;
     params.n_ubatch = 512;
-    params.n_threads = 4;
-    params.n_threads_batch = 4;
+    const int threads = std::clamp<int>(requested_threads, 4, 8);
+    params.n_threads = threads;
+    params.n_threads_batch = threads;
     g_ctx = llama_init_from_model(g_model, params);
     if (!g_ctx) {
         clear_model();
@@ -109,6 +111,11 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
     const int n = env->GetArrayLength(roles);
     if (!n || n != env->GetArrayLength(texts)) return fail(env, "Некорректная история сообщений");
     g_stop.store(false);
+    using clock = std::chrono::steady_clock;
+    const auto begun = clock::now();
+    const auto elapsed_ms = [](clock::time_point a, clock::time_point b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+    };
 
     std::vector<std::string> r, t;
     r.reserve(n + 1); t.reserve(n + 1);
@@ -181,6 +188,9 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.6f));
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
+    const auto prefill_finished = clock::now();
+    int generated_tokens = 0;
+    clock::time_point first_sampled{};
     std::string error;
     auto emit_method = env->GetMethodID(env->GetObjectClass(receiver), "emitToken", "(Ljava/lang/String;)V");
     if (!emit_method) {
@@ -203,6 +213,8 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
         for (int i=0; i<limit && error.empty() && !g_stop.load(); ++i) {
             llama_token next = llama_sampler_sample(sampler, g_ctx, -1);
             if (llama_vocab_is_eog(vocab, next)) break;
+            if (generated_tokens == 0) first_sampled = clock::now();
+            ++generated_tokens;
             int nbytes = llama_token_to_piece(vocab, next, nullptr, 0, 0, true);
             if (nbytes >= 0) {
                 std::string piece(nbytes, '\0');
@@ -229,14 +241,33 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
             emit(env, receiver, emit_method, pending);
         }
     }
+    const auto finished = clock::now();
     llama_sampler_free(sampler);
     llama_batch_ext_free(batch);
     if (!error.empty()) return fail(env, error);
+
+    // Time to first token includes prompt tokenization and processing.
+    // Decode tok/s excludes the first sampled token.
+    const double prefill_ms = elapsed_ms(begun, prefill_finished);
+    const double total_ms = elapsed_ms(begun, finished);
+    const double decoding_ms = generated_tokens > 1
+        ? elapsed_ms(first_sampled, finished) : 0.0;
+    const double tokens_per_second = decoding_ms > 0
+        ? (generated_tokens - 1) * 1000.0 / decoding_ms : 0.0;
+    auto metrics_method = env->GetMethodID(env->GetObjectClass(receiver),
+                                            "emitPerformance", "(DDDI)V");
+    if (metrics_method) {
+        env->CallVoidMethod(receiver, metrics_method, prefill_ms,
+                            tokens_per_second, total_ms, generated_tokens);
+        if (env->ExceptionCheck()) env->ExceptionClear();
+    } else if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+    }
     return nullptr;
 }
 
 JNINativeMethod methods[] = {
-    {"nativeLoad", "(Ljava/lang/String;)Ljava/lang/String;", reinterpret_cast<void *>(native_load)},
+    {"nativeLoad", "(Ljava/lang/String;I)Ljava/lang/String;", reinterpret_cast<void *>(native_load)},
     {"nativeUnload", "()V", reinterpret_cast<void *>(native_unload)},
     {"nativeGenerate", "([Ljava/lang/String;[Ljava/lang/String;I)Ljava/lang/String;", reinterpret_cast<void *>(native_generate)},
     {"nativeStop", "()V", reinterpret_cast<void *>(native_stop)},
