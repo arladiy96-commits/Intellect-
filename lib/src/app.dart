@@ -4,6 +4,8 @@ import 'features/agents/agents_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/models/models_screen.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/settings/updates_screen.dart';
+import 'core/updates/baboon_update_service.dart';
 
 class MyAiApp extends StatelessWidget {
   const MyAiApp({super.key});
@@ -38,6 +40,32 @@ class MainShell extends StatefulWidget {
 
 class _MainShellState extends State<MainShell> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdatesQuietly());
+  }
+
+  Future<void> _checkUpdatesQuietly() async {
+    try {
+      final release = await BaboonUpdateService().checkAvailable();
+      if (!mounted || release == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Доступно обновление Бабуина ${release.tag}'),
+          action: SnackBarAction(
+            label: 'Открыть',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const UpdatesScreen()),
+            ),
+          ),
+        ),
+      );
+    } catch (_) {
+      // No internet or no stable release should never block offline AI use.
+    }
+  }
 
   static const _pages = <Widget>[
     ChatScreen(),
