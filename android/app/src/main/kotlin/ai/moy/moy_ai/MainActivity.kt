@@ -54,8 +54,8 @@ class MainActivity : FlutterActivity() {
                     "getCpuThreads" -> result.success(prefs.getInt("cpu_threads", 4))
                     "setCpuThreads" -> {
                         val threads = call.argument<Int>("threads") ?: 4
-                        if (threads !in listOf(4, 6, 8)) {
-                            result.error("INVALID_THREADS", "Допустимы 4, 6 или 8 потоков", null)
+                        if (threads !in listOf(1, 2, 4, 6, 8)) {
+                            result.error("INVALID_THREADS", "Допустимы 1, 2, 4, 6 или 8 потоков", null)
                         } else if (activeModelPath != null) {
                             result.error("MODEL_LOADED", "Сначала выгрузи модель", null)
                         } else {
@@ -91,7 +91,7 @@ class MainActivity : FlutterActivity() {
                                 try {
                                     LocalLlamaBridge.nativeUnload()
                                     activeModelPath = null
-                                    val threads = prefs.getInt("cpu_threads", 4).coerceIn(4, 8)
+                                    val threads = prefs.getInt("cpu_threads", 4).coerceIn(1, 8)
                                     val err = LocalLlamaBridge.nativeLoad(path, threads)
                                     ui.post {
                                         if (err == null) {
