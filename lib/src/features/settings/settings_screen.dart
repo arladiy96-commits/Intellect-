@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'cloud_settings_screen.dart';
 import 'updates_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -11,6 +12,18 @@ class SettingsScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Text('Настройки', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.cloud_outlined),
+            title: const Text('Облачный ИИ · Groq / OpenRouter'),
+            subtitle: const Text('API-ключ, модель и переключение облако / локально'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const CloudSettingsScreen()),
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
         Card(
           child: ListTile(
@@ -46,7 +59,7 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 20),
-        const Center(child: Text('БАБУИН · первоначальный каркас 0.1')),
+        const Center(child: Text('БАБУИН')),
       ],
     );
   }
