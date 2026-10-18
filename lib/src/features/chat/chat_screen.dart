@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import '../../core/ai/ai_engine.dart';
 import '../../core/ai/llama_native_engine.dart';
 import '../../core/memory/conversation_repository.dart';
+import '../../core/memory/shared_memory_store.dart';
+import '../memory/memory_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -18,10 +20,10 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scroll = ScrollController();
   final _engine = LlamaNativeEngine.instance;
   final _repository = LocalConversationRepository.instance;
+  final _memoryStore = SharedMemoryStore.instance;
 
   List<AiMessage> _messages = [];
   List<ChatThread> _threads = [];
-  List<MemoryNote> _memory = [];
   String? _activeId;
   bool _ready = false;
   String? _loadError;
@@ -37,12 +39,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _initialize() async {
     try {
       final threads = List<ChatThread>.of(await _repository.loadConversations());
-      final memory = List<MemoryNote>.of(await _repository.loadMemory());
+      await _memoryStore.ensureLoaded();
       if (!mounted) return;
       threads.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
       setState(() {
         _threads = threads;
-        _memory = memory;
         if (threads.isNotEmpty) {
           _activeId = threads.first.id;
           _messages = List.of(threads.first.messages);
@@ -94,14 +95,6 @@ class _ChatScreenState extends State<ChatScreen> {
       await _repository.saveConversations(List.of(_threads));
     } catch (e) {
       _showError('Не удалось сохранить диалоги: $e');
-    }
-  }
-
-  Future<void> _writeMemory() async {
-    try {
-      await _repository.saveMemory(List.of(_memory));
-    } catch (e) {
-      _showError('Не удалось сохранить память: $e');
     }
   }
 
@@ -276,13 +269,13 @@ class _ChatScreenState extends State<ChatScreen> {
     return '$day.$month.${d.year}';
   }
 
-  Future<void> _editNote({MemoryNote? note, String initialText = ''}) async {
+  Future<void> _editNote({String initialText = ''}) async {
     if (_sending || !_ready) return;
-    final editor = TextEditingController(text: note?.text ?? initialText);
+    final editor = TextEditingController(text: initialText);
     final text = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(note == null ? 'Запомнить' : 'Изменить заметку'),
+        title: const Text('Добавить в память'),
         content: TextField(
           controller: editor,
           autofocus: true,
@@ -290,80 +283,31 @@ class _ChatScreenState extends State<ChatScreen> {
           maxLines: 5,
           maxLength: 300,
           decoration: const InputDecoration(
-            hintText: 'Факт или инструкция, которую нужно помнить между чатами',
+            hintText: 'Что Бабуин должен помнить во всех чатах?',
           ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, editor.text.trim()), child: const Text('Сохранить')),
+          FilledButton(onPressed: () => Navigator.pop(dialogContext, editor.text.trim()),
+              child: const Text('Сохранить')),
         ],
       ),
     );
     editor.dispose();
     if (!mounted || text == null || text.isEmpty) return;
-    setState(() {
-      if (note == null) {
-        _memory.add(MemoryNote(id: _makeId(), text: text));
-      } else {
-        final index = _memory.indexWhere((e) => e.id == note.id);
-        if (index >= 0) _memory[index] = MemoryNote(id: note.id, text: text);
-      }
-    });
-    unawaited(_writeMemory());
-  }
-
-  Future<void> _removeNote(MemoryNote note) async {
-    if (_sending) return;
-    setState(() => _memory.removeWhere((e) => e.id == note.id));
-    unawaited(_writeMemory());
+    try {
+      await _memoryStore.save(text: text,
+        category: suggestMemoryCategory(text));
+      _showError('Сохранено в общей памяти Бабуина');
+    } catch (e) {
+      _showError('Не удалось сохранить память: $e');
+    }
   }
 
   Future<void> _showMemory() async {
     if (_sending || !_ready) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.sizeOf(sheetContext).height * .7,
-          child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 10, 8),
-              child: Row(children: [
-                const Expanded(child: Text('Память ИИ', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600))),
-                IconButton(
-                  tooltip: 'Добавить заметку',
-                  icon: const Icon(Icons.add),
-                  onPressed: () { Navigator.pop(sheetContext); unawaited(_editNote()); },
-                ),
-              ]),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              child: Text('Заметки сохраняются только на телефоне и доступны в новых чатах. В запрос передаётся ограниченное количество заметок.'),
-            ),
-            const Divider(height: 1),
-            Expanded(child: _memory.isEmpty
-              ? const Center(child: Text('Пока ничего не сохранено'))
-              : ListView.builder(
-                  itemCount: _memory.length,
-                  itemBuilder: (_, index) {
-                    final note = _memory[index];
-                    return ListTile(
-                      title: Text(note.text, maxLines: 3, overflow: TextOverflow.ellipsis),
-                      onTap: () { Navigator.pop(sheetContext); unawaited(_editNote(note: note)); },
-                      trailing: IconButton(
-                        tooltip: 'Удалить заметку',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () { Navigator.pop(sheetContext); unawaited(_removeNote(note)); },
-                      ),
-                    );
-                  },
-                )),
-          ]),
-        ),
-      ),
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const MemoryScreen()),
     );
   }
 
@@ -372,15 +316,23 @@ class _ChatScreenState extends State<ChatScreen> {
     if (question.isEmpty || !_ready || _sending || !_engine.isModelLoaded) return;
     _controller.clear();
     FocusScope.of(context).unfocus();
+    // Persist explicit "Запомни, что..." commands before composing the prompt.
+    // All chats share a single in-memory store backed by memory.v1.json.
+    setState(() => _sending = true);
+    try {
+      await _memoryStore.captureExplicit(question);
+    } catch (e) {
+      _showError('Не удалось сохранить воспоминание: $e');
+    }
+    if (!mounted) return;
     final previous = List<AiMessage>.of(_messages);
     final recent = previous.length > 48 ? previous.sublist(previous.length - 48) : previous;
     final prompt = buildConversationPrompt(
-      [...recent, AiMessage(role: 'user', text: question)], _memory,
+      [...recent, AiMessage(role: 'user', text: question)], _memoryStore.notes,
     );
     final targetIndex = _messages.length + 1;
     setState(() {
       _activeId ??= _makeId();
-      _sending = true;
       _messages.add(AiMessage(role: 'user', text: question));
       _messages.add(const AiMessage(role: 'assistant', text: ''));
     });
@@ -480,7 +432,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     const Icon(Icons.psychology_outlined, size: 64),
                     const SizedBox(height: 16),
-                    Text('Мой локальный ИИ', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Бабуин — локальный ИИ', style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 8),
                     const Text('Напиши вопрос. Чаты сохраняются на телефоне, даже после закрытия приложения.', textAlign: TextAlign.center),
                   ]),
