@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'ai_engine.dart';
+import 'cloud_ai_engine.dart';
 
 class GenerationPerformance {
   const GenerationPerformance({
@@ -31,8 +32,8 @@ class InstalledModel {
   );
 }
 
-/// Device-only llama.cpp bridge. Does not use Termux, a local HTTP server,
-/// or an external API. Android imports GGUF using ACTION_OPEN_DOCUMENT.
+/// Shared chat engine: local llama.cpp, Groq or OpenRouter.
+/// GGUF, chat history and memory never need migrating when changing modes.
 class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   LlamaNativeEngine._() {
     _subscription = const EventChannel('moy_ai/llama_events')
@@ -44,12 +45,14 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     unawaited(refreshModels());
     unawaited(refreshCpuThreads());
     unawaited(refreshGpuSettings());
+    unawaited(refreshCloud());
   }
 
   static final LlamaNativeEngine instance = LlamaNativeEngine._();
   static const _channel = MethodChannel('moy_ai/llama');
   final _tokens = StreamController<Map<dynamic, dynamic>>.broadcast(sync: true);
   late final StreamSubscription<dynamic> _subscription;
+  final _cloud = CloudAiEngine.instance;
 
   List<InstalledModel> models = [];
   String? activeModelPath;
@@ -64,7 +67,17 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   bool isBusy = false;
   bool isGenerating = false;
 
-  bool get isModelLoaded => activeModelPath != null;
+  bool cloudEnabled = false;
+  bool cloudHasKey = false;
+  String cloudModel = CloudCredentials.defaultGroqModel;
+  CloudProvider cloudProvider = CloudProvider.groq;
+  int? get cloudRemainingRequests => _cloud.remainingRequests;
+  int? get cloudRemainingTokens => _cloud.remainingTokens;
+  String get cloudProviderTitle => cloudProvider.title;
+  bool get cloudGroqHasKey => _cloud.credentials.hasGroqKey;
+  bool get cloudOpenRouterHasKey => _cloud.credentials.hasOpenRouterKey;
+  bool get isLocalModelLoaded => activeModelPath != null;
+  bool get isModelLoaded => cloudEnabled ? cloudHasKey : isLocalModelLoaded;
 
   void _handleEvent(dynamic raw) {
     if (raw is! Map) return;
@@ -87,6 +100,76 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     }
   }
 
+  Future<void> refreshCloud() async {
+    try {
+      await _cloud.credentials.load();
+      cloudEnabled = _cloud.credentials.enabled;
+      cloudHasKey = _cloud.credentials.hasKey;
+      cloudModel = _cloud.credentials.model;
+      cloudProvider = _cloud.credentials.provider;
+      if (cloudEnabled) status = 'Облако · ${cloudProvider.title} · $cloudModel';
+      notifyListeners();
+    } on Exception catch (_) {
+      // If secure storage fails, remain offline. Do not expose key contents.
+      cloudEnabled = false;
+      cloudHasKey = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> saveCloudKey(String key) async {
+    if (isBusy || isGenerating) throw StateError('Дождись завершения ответа');
+    await _cloud.credentials.saveKey(_cloud.credentials.provider, key);
+    await refreshCloud();
+  }
+
+  Future<void> deleteCloudKey() async {
+    if (isBusy || isGenerating) throw StateError('Дождись завершения ответа');
+    await _cloud.credentials.removeKey(_cloud.credentials.provider);
+    await refreshCloud();
+    status = isLocalModelLoaded ? 'Локальная модель готова' : 'Выбери GGUF в разделе «Модели»';
+    notifyListeners();
+  }
+
+  Future<void> saveCloudModel(String model) async {
+    if (isBusy || isGenerating) throw StateError('Дождись завершения ответа');
+    await _cloud.credentials.saveModel(_cloud.credentials.provider, model);
+    await refreshCloud();
+  }
+
+  Future<void> selectCloudProvider(CloudProvider provider) async {
+    if (isBusy || isGenerating) throw StateError('Дождись завершения ответа');
+    await _cloud.credentials.selectProvider(provider);
+    _cloud.remainingRequests = null;
+    _cloud.remainingTokens = null;
+    await refreshCloud();
+    status = cloudEnabled
+        ? 'Облако · ${cloudProvider.title} · $cloudModel'
+        : 'Выбери режим или сохрани ключ ${cloudProvider.title}';
+    notifyListeners();
+  }
+
+  Future<void> setCloudMode(bool value) async {
+    if (isBusy || isGenerating) throw StateError('Дождись завершения ответа');
+    await _cloud.credentials.load();
+    if (value && !_cloud.credentials.hasKey) {
+      throw StateError('Сначала добавь API-ключ в настройках облачного ИИ');
+    }
+    if (value && isLocalModelLoaded) {
+      // Free CPU/GPU/RAM before using remote inference.
+      await unloadModel();
+    }
+    await _cloud.credentials.setEnabled(value);
+    cloudEnabled = value;
+    cloudHasKey = _cloud.credentials.hasKey;
+    cloudModel = _cloud.credentials.model;
+    lastPerformance = null;
+    cloudProvider = _cloud.credentials.provider;
+    status = value ? 'Облако · ${cloudProvider.title} · $cloudModel'
+        : 'Локальный режим: запусти GGUF в разделе «Модели»';
+    notifyListeners();
+  }
+
   Future<void> refreshCpuThreads() async {
     try {
       cpuThreads = await _channel.invokeMethod<int>('getCpuThreads') ?? 4;
@@ -97,7 +180,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   }
 
   Future<void> setCpuThreads(int threads) async {
-    if (isBusy || isGenerating || isModelLoaded) {
+    if (isBusy || isGenerating || isLocalModelLoaded) {
       throw StateError('Сначала выгрузи модель');
     }
     if (![1, 2, 4, 6, 8].contains(threads)) {
@@ -124,7 +207,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   }
 
   Future<void> setGpuLayers(int layers) async {
-    if (isBusy || isGenerating || isModelLoaded) {
+    if (isBusy || isGenerating || isLocalModelLoaded) {
       throw StateError('Сначала выгрузи модель');
     }
     if (![0, 8, 16, 32, 99].contains(layers)) {
@@ -178,6 +261,9 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   @override
   Future<void> loadModel(String modelPath) async {
     if (isBusy || isGenerating) return;
+    // Starting a local GGUF always selects local mode. Do not leave both
+    // models resident while the cloud mode is selected.
+    if (cloudEnabled) await setCloudMode(false);
     isBusy = true;
     status = 'Загрузка модели в оперативную память…';
     notifyListeners();
@@ -224,12 +310,27 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
 
   @override
   Stream<String> streamReply(List<AiMessage> conversation) async* {
-    if (!isModelLoaded) throw StateError('Сначала запусти модель');
+    if (!isModelLoaded) throw StateError('Сначала выбери модель');
     if (isGenerating || isBusy) throw StateError('Дождись завершения предыдущей операции');
 
     isGenerating = true;
-    status = 'Генерация ответа…';
+    final useCloud = cloudEnabled;
+    status = useCloud ? 'Облако · получаю ответ…' : 'Генерация ответа…';
     notifyListeners();
+    if (useCloud) {
+      try {
+        yield* _cloud.streamReply(conversation);
+        status = 'Облако · ${cloudProvider.title} · $cloudModel';
+      } on Object catch (e) {
+        status = 'Ошибка облачного ответа: $e';
+        rethrow;
+      } finally {
+        isGenerating = false;
+        notifyListeners();
+      }
+      return;
+    }
+
     final stream = StreamController<String>();
     final subscription = _tokens.stream.listen((event) {
       switch (event['type']) {
@@ -263,7 +364,12 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   }
 
   Future<void> stop() async {
-    if (isGenerating) await _channel.invokeMethod<void>('stop');
+    if (!isGenerating) return;
+    if (cloudEnabled) {
+      await _cloud.stop();
+    } else {
+      await _channel.invokeMethod<void>('stop');
+    }
   }
 
   @override
