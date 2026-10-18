@@ -17,6 +17,7 @@ void main() {
     expect(body['include_reasoning'], false);
     expect(body['reasoning_effort'], 'medium');
     expect(body['stream'], true);
+    expect((body['stream_options'] as Map)['include_usage'], true);
   });
 
   test('OpenRouter request does not include Groq-only fields', () {
@@ -55,4 +56,44 @@ void main() {
       throwsA(isA<StateError>()),
     );
   });
+  test('SSE usage event is counted even when choices is empty', () async {
+    final updates = <CloudTokenUsage>[];
+    final chunks = await cloudTextChunks(Stream<String>.fromIterable([
+      'data: {"choices":[{"delta":{"content":"Привет"}}]}',
+      '',
+      'data: {"model":"openai/gpt-oss-120b","choices":[],"usage":{"prompt_tokens":120,"completion_tokens":42,"total_tokens":162}}',
+      '',
+      'data: [DONE]',
+      '',
+    ]), onUsage: updates.add).toList();
+    expect(chunks, ['Привет']);
+    expect(updates.length, 1);
+    expect(updates.first.promptTokens, 120);
+    expect(updates.first.completionTokens, 42);
+    expect(updates.first.totalTokens, 162);
+  });
+
+  test('Groq quota identifies RPD separately from TPM', () {
+    final quota = GroqQuota.fromHeaders('openai/gpt-oss-120b', {
+      'x-ratelimit-limit-requests': '1000',
+      'x-ratelimit-remaining-requests': '999',
+      'x-ratelimit-limit-tokens': '8000',
+      'x-ratelimit-remaining-tokens': '7650',
+    }, DateTime(2026, 10, 19));
+    expect(quota.requestLimit, 1000);
+    expect(quota.requestsRemaining, 999);
+    expect(quota.minuteTokenLimit, 8000);
+    expect(quota.minuteTokensRemaining, 7650);
+  });
+
+  test('Device daily usage survives JSON and separates different days', () {
+    final today = CloudDailyUsage(date: '2026-10-19').adding(
+      const CloudTokenUsage(promptTokens: 100, completionTokens: 50,
+          totalTokens: 150, model: 'openai/gpt-oss-120b'));
+    final restored = CloudDailyUsage.fromJson(today.toJson())!;
+    expect(restored.requests, 1);
+    expect(restored.totalTokens, 150);
+    expect(restored.lastRequest?.completionTokens, 50);
+  });
+
 }
