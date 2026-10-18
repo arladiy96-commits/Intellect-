@@ -5,6 +5,19 @@ import 'package:flutter/services.dart';
 
 import 'ai_engine.dart';
 
+class GenerationPerformance {
+  const GenerationPerformance({
+    required this.prefillMs,
+    required this.tokensPerSecond,
+    required this.totalMs,
+    required this.generatedTokens,
+  });
+  final double prefillMs;
+  final double tokensPerSecond;
+  final double totalMs;
+  final int generatedTokens;
+}
+
 class InstalledModel {
   const InstalledModel({required this.name, required this.path, required this.bytes});
   final String name;
@@ -29,6 +42,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
           notifyListeners();
         });
     unawaited(refreshModels());
+    unawaited(refreshCpuThreads());
   }
 
   static final LlamaNativeEngine instance = LlamaNativeEngine._();
@@ -40,6 +54,8 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   String? activeModelPath;
   String status = 'Выбери GGUF в разделе «Модели»';
   double? importProgress;
+  int cpuThreads = 4;
+  GenerationPerformance? lastPerformance;
   bool isBusy = false;
   bool isGenerating = false;
 
@@ -53,9 +69,40 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
       importProgress = (event['progress'] as num?)?.toDouble();
       status = 'Копирование модели: ${((importProgress ?? 0) * 100).round()}%';
       notifyListeners();
+    } else if (type == 'performance') {
+      lastPerformance = GenerationPerformance(
+        prefillMs: (event['prefillMs'] as num? ?? 0).toDouble(),
+        tokensPerSecond: (event['tokensPerSecond'] as num? ?? 0).toDouble(),
+        totalMs: (event['totalMs'] as num? ?? 0).toDouble(),
+        generatedTokens: (event['generatedTokens'] as num? ?? 0).toInt(),
+      );
+      notifyListeners();
     } else if (type == 'token' || type == 'done' || type == 'error') {
       _tokens.add(event);
     }
+  }
+
+  Future<void> refreshCpuThreads() async {
+    try {
+      cpuThreads = await _channel.invokeMethod<int>('getCpuThreads') ?? 4;
+      notifyListeners();
+    } on Exception catch (_) {
+      // First-run fallback; no impact on inference or model import.
+    }
+  }
+
+  Future<void> setCpuThreads(int threads) async {
+    if (isBusy || isGenerating || isModelLoaded) {
+      throw StateError('Сначала выгрузи модель');
+    }
+    if (![4, 6, 8].contains(threads)) {
+      throw ArgumentError.value(threads, 'threads');
+    }
+    await _channel.invokeMethod<void>('setCpuThreads', {'threads': threads});
+    cpuThreads = threads;
+    lastPerformance = null;
+    status = 'Настроено $threads потоков. Теперь запусти модель.';
+    notifyListeners();
   }
 
   Future<void> refreshModels() async {
@@ -102,7 +149,8 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     try {
       await _channel.invokeMethod<void>('loadModel', {'path': modelPath});
       activeModelPath = modelPath;
-      status = 'Модель готова к работе';
+      lastPerformance = null;
+      status = 'Модель готова к работе ($cpuThreads CPU-потоков)';
     } on PlatformException catch (e) {
       activeModelPath = null;
       status = 'Не удалось загрузить: ${e.message}';
