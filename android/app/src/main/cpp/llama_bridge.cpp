@@ -92,7 +92,7 @@ jstring native_load(JNIEnv * env, jobject, jstring jpath, jint requested_threads
     params.n_ctx = 2048;
     params.n_batch = 512;
     params.n_ubatch = 512;
-    const int threads = std::clamp<int>(requested_threads, 4, 8);
+    const int threads = std::clamp<int>(requested_threads, 1, 8);
     params.n_threads = threads;
     params.n_threads_batch = threads;
     g_ctx = llama_init_from_model(g_model, params);
@@ -188,7 +188,6 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
     llama_sampler_chain_add(sampler, llama_sampler_init_temp(0.6f));
     llama_sampler_chain_add(sampler, llama_sampler_init_dist(LLAMA_DEFAULT_SEED));
 
-    const auto prefill_finished = clock::now();
     int generated_tokens = 0;
     clock::time_point first_sampled{};
     std::string error;
@@ -246,9 +245,12 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
     llama_batch_ext_free(batch);
     if (!error.empty()) return fail(env, error);
 
-    // Time to first token includes prompt tokenization and processing.
-    // Decode tok/s excludes the first sampled token.
-    const double prefill_ms = elapsed_ms(begun, prefill_finished);
+    // Includes chat formatting, tokenization, prefill and sampling of the
+    // first token. This is the actual delay before the first sampled token.
+    // Decode tok/s excludes the first token, so it only measures generation.
+    // If generation stopped before its first token, report elapsed time.
+    const double prefill_ms = elapsed_ms(begun,
+        generated_tokens > 0 ? first_sampled : finished);
     const double total_ms = elapsed_ms(begun, finished);
     const double decoding_ms = generated_tokens > 1
         ? elapsed_ms(first_sampled, finished) : 0.0;
