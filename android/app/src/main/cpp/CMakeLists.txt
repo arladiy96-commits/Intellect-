@@ -45,6 +45,22 @@ target_compile_options(moy_ai_native PRIVATE -O2 -fexceptions -frtti)
 # SPIR-V headers are header-only host build dependencies. Do not include the
 # host system include directory wholesale in an Android cross compilation.
 if(ANDROID AND TARGET ggml-vulkan)
+    # Android NDK ships the Vulkan C API but not the Vulkan-Hpp C++ wrapper.
+    # The pinned ggml-vulkan backend requires <vulkan/vulkan.hpp>.
+    # Use the entire matching set of host Vulkan headers for compilation,
+    # copied into an isolated directory so /usr/include is NOT added to the
+    # Android target's search path. Linking still uses Android NDK libvulkan.
+    if(NOT EXISTS "/usr/include/vulkan/vulkan.hpp")
+        message(FATAL_ERROR "Vulkan-Hpp is missing on the build host; install libvulkan-dev")
+    endif()
+    set(BABOON_VULKAN_HEADERS "${CMAKE_CURRENT_BINARY_DIR}/baboon-vulkan-headers")
+    file(MAKE_DIRECTORY "${BABOON_VULKAN_HEADERS}")
+    file(COPY "/usr/include/vulkan" DESTINATION "${BABOON_VULKAN_HEADERS}")
+    if(EXISTS "/usr/include/vk_video")
+        file(COPY "/usr/include/vk_video" DESTINATION "${BABOON_VULKAN_HEADERS}")
+    endif()
+    target_include_directories(ggml-vulkan BEFORE PRIVATE "${BABOON_VULKAN_HEADERS}")
+
     if(EXISTS "/usr/include/spirv/unified1/spirv.hpp")
         file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/baboon-spirv-headers")
         file(COPY "/usr/include/spirv" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}/baboon-spirv-headers")
