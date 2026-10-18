@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/ai/ai_engine.dart';
 import '../../core/ai/llama_native_engine.dart';
+import '../../core/baboon/baboon_core.dart';
 import '../../core/memory/conversation_repository.dart';
 import '../../core/memory/shared_memory_store.dart';
 import '../memory/memory_screen.dart';
@@ -19,6 +20,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
   final _engine = LlamaNativeEngine.instance;
+  final _core = BaboonCore.instance;
   final _repository = LocalConversationRepository.instance;
   final _memoryStore = SharedMemoryStore.instance;
 
@@ -313,7 +315,11 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _send() async {
     final question = _controller.text.trim();
-    if (question.isEmpty || !_ready || _sending || !_engine.isModelLoaded) return;
+    if (question.isEmpty || !_ready || _sending) return;
+    if (!_engine.isModelLoaded && !_core.canHandle(question)) {
+      _showError('Для этого вопроса сначала запусти ИИ. Простые вычисления и поиск по базе доступны без модели.');
+      return;
+    }
     _controller.clear();
     FocusScope.of(context).unfocus();
     // Persist explicit "Запомни, что..." commands before composing the prompt.
@@ -326,7 +332,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     if (!mounted) return;
     final previous = List<AiMessage>.of(_messages);
-    final recent = previous.length > 48 ? previous.sublist(previous.length - 48) : previous;
+    final safePrevious = _engine.cloudEnabled
+        ? _core.cloudSafeHistory(previous)
+        : previous;
+    final recent = safePrevious.length > 48
+        ? safePrevious.sublist(safePrevious.length - 48) : safePrevious;
     final prompt = buildConversationPrompt(
       [...recent, AiMessage(role: 'user', text: question)], _memoryStore.notes,
     );
@@ -342,15 +352,22 @@ class _ChatScreenState extends State<ChatScreen> {
     String response = '';
     final paintClock = Stopwatch()..start();
     try {
-      await for (final part in _engine.streamReply(prompt)) {
-        response += part;
-        if (!mounted) break;
-        // Groq may stream hundreds of chunks per second. Repaint no more
-        // often than about 20 times/s, without dropping any text.
-        if (paintClock.elapsedMilliseconds < 50) continue;
-        paintClock.reset();
-        setState(() => _messages[targetIndex] = AiMessage(role: 'assistant', text: response));
-        _toBottom();
+      // Baboon Core executes safe, registered tools before consulting the
+      // selected AI model. No knowledge documents leave the phone here.
+      final tool = await _core.tryTool(question);
+      if (tool != null) {
+        response = tool.message;
+      } else {
+        await for (final part in _engine.streamReply(prompt)) {
+          response += part;
+          if (!mounted) break;
+          // Groq may stream hundreds of chunks per second. Repaint no more
+          // often than about 20 times/s, without dropping any text.
+          if (paintClock.elapsedMilliseconds < 50) continue;
+          paintClock.reset();
+          setState(() => _messages[targetIndex] = AiMessage(role: 'assistant', text: response));
+          _toBottom();
+        }
       }
       if (mounted) {
         setState(() => _messages[targetIndex] = AiMessage(
@@ -415,7 +432,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     (t) => t.id == _activeId,
                     orElse: () => ChatThread(id: '', title: 'Диалог', createdAt: DateTime.now(), updatedAt: DateTime.now(), messages: const []),
                   ).title, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  Text(_engine.isModelLoaded ? _engine.status : 'Модель не запущена — открой «Модели»',
+                  Text(_engine.isModelLoaded ? _engine.status : 'Без модели доступны математические инструменты и поиск по знаниям',
                     style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
               )),
@@ -500,7 +517,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 controller: _controller,
                 minLines: 1,
                 maxLines: 4,
-                enabled: !_sending && _engine.isModelLoaded,
+                enabled: _ready && !_sending,
                 textCapitalization: TextCapitalization.sentences,
                 decoration: const InputDecoration(
                   hintText: 'Напиши сообщение…',
@@ -512,7 +529,7 @@ class _ChatScreenState extends State<ChatScreen> {
               IconButton.filled(
                 tooltip: _sending ? 'Остановить' : 'Отправить',
                 icon: Icon(_sending ? Icons.stop_rounded : Icons.send_rounded),
-                onPressed: _sending ? _engine.stop : (_engine.isModelLoaded ? _send : null),
+                onPressed: _sending ? _engine.stop : (_ready ? _send : null),
               ),
             ]),
           ),
