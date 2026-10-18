@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'features/agents/agents_screen.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/models/models_screen.dart';
+import 'features/memory/memory_screen.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/settings/updates_screen.dart';
 import 'core/updates/baboon_update_service.dart';
@@ -71,6 +72,7 @@ class _MainShellState extends State<MainShell> {
     ChatScreen(),
     AgentsScreen(),
     ModelsScreen(),
+    MemoryScreen(),
     SettingsScreen(),
   ];
 
@@ -92,6 +94,7 @@ class _MainShellState extends State<MainShell> {
             label: 'Агенты',
           ),
           NavigationDestination(icon: Icon(Icons.memory), label: 'Модели'),
+          NavigationDestination(icon: Icon(Icons.psychology_outlined), label: 'Память'),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             label: 'Настройки',
