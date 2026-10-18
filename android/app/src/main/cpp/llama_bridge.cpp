@@ -1,5 +1,6 @@
 #include <jni.h>
 #include "llama.h"
+#include "ggml-backend.h"
 
 #include <algorithm>
 #include <atomic>
@@ -76,7 +77,16 @@ void batch_set(llama_batch_ext * batch, const llama_token * tokens, int count, l
     llama_batch_ext_set_output_logits(batch, count - 1, true);
 }
 
-jstring native_load(JNIEnv * env, jobject, jstring jpath, jint requested_threads) {
+// Returns the GPU name only after the user opts in to GPU mode. Avoids
+// explicit GPU probing at regular app startup.
+jstring native_gpu_description(JNIEnv * env, jobject) {
+    ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    if (!dev) return nullptr;
+    const char * description = ggml_backend_dev_description(dev);
+    return env->NewStringUTF(description ? description : "Vulkan GPU");
+}
+
+jstring native_load(JNIEnv * env, jobject, jstring jpath, jint requested_threads, jint requested_gpu_layers) {
     clear_model();
     const auto path = as_string(env, jpath);
     if (path.empty()) return fail(env, "Путь к GGUF пуст");
@@ -85,7 +95,14 @@ jstring native_load(JNIEnv * env, jobject, jstring jpath, jint requested_threads
         g_backend_initialized = true;
     }
     auto model_params = llama_model_default_params();
-    model_params.n_gpu_layers = 0;  // reliable ARM CPU baseline, no GPU required
+    const int gpu_layers = std::clamp<int>(requested_gpu_layers, 0, 99);
+    if (gpu_layers > 0) {
+        // Fail cleanly on unsupported Vulkan devices. Kotlin retries in CPU mode.
+        if (!ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU)) {
+            return fail(env, "Vulkan GPU недоступен в этой конфигурации устройства");
+        }
+    }
+    model_params.n_gpu_layers = gpu_layers;
     g_model = llama_model_load_from_file(path.c_str(), model_params);
     if (!g_model) return fail(env, "llama.cpp не смог открыть GGUF");
     auto params = llama_context_default_params();
@@ -269,7 +286,8 @@ jstring native_generate(JNIEnv * env, jobject receiver, jobjectArray roles, jobj
 }
 
 JNINativeMethod methods[] = {
-    {"nativeLoad", "(Ljava/lang/String;I)Ljava/lang/String;", reinterpret_cast<void *>(native_load)},
+    {"nativeLoad", "(Ljava/lang/String;II)Ljava/lang/String;", reinterpret_cast<void *>(native_load)},
+    {"nativeGpuDescription", "()Ljava/lang/String;", reinterpret_cast<void *>(native_gpu_description)},
     {"nativeUnload", "()V", reinterpret_cast<void *>(native_unload)},
     {"nativeGenerate", "([Ljava/lang/String;[Ljava/lang/String;I)Ljava/lang/String;", reinterpret_cast<void *>(native_generate)},
     {"nativeStop", "()V", reinterpret_cast<void *>(native_stop)},
