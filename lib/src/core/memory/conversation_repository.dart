@@ -144,14 +144,26 @@ String? extractExplicitMemory(String message) {
 
 String suggestMemoryCategory(String text) {
   final lower = text.toLowerCase();
-  if (lower.contains('проект') || lower.contains('приложени') ||
-      lower.contains('разрабатыва')) return 'projects';
-  if (lower.contains('всегда ') || lower.contains('никогда ') ||
-      lower.contains('правило')) return 'rules';
-  if (lower.contains('предпочита') || lower.contains('мне нравится') ||
-      lower.contains('люблю ')) return 'preferences';
-  if (lower.contains('меня зовут') || lower.contains('я живу') ||
-      lower.contains('я работаю')) return 'about';
+  if (lower.contains('проект') ||
+      lower.contains('приложени') ||
+      lower.contains('разрабатыва')) {
+    return 'projects';
+  }
+  if (lower.contains('всегда ') ||
+      lower.contains('никогда ') ||
+      lower.contains('правило')) {
+    return 'rules';
+  }
+  if (lower.contains('предпочита') ||
+      lower.contains('мне нравится') ||
+      lower.contains('люблю ')) {
+    return 'preferences';
+  }
+  if (lower.contains('меня зовут') ||
+      lower.contains('я живу') ||
+      lower.contains('я работаю')) {
+    return 'about';
+  }
   return 'other';
 }
 
