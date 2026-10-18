@@ -57,6 +57,66 @@ class ModelsScreen extends StatelessWidget {
                       ),
               ),
             ),
+          const SizedBox(height: 18),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Производительность CPU',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  const Text('Выбери число потоков и запусти модель заново. '
+                      'Больше потоков не всегда означает быстрее.'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final threads in [4, 6, 8])
+                        ChoiceChip(
+                          label: Text('$threads ${threads == 4 ? 'потока' : 'потоков'}'),
+                          selected: ai.cpuThreads == threads,
+                          onSelected: ai.isBusy || ai.isGenerating || ai.isModelLoaded
+                              ? null
+                              : (selected) async {
+                                  if (!selected) return;
+                                  try {
+                                    await ai.setCpuThreads(threads);
+                                  } catch (error) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('$error')),
+                                      );
+                                    }
+                                  }
+                                },
+                        ),
+                    ],
+                  ),
+                  if (ai.isModelLoaded)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text('Для смены потоков нажми «Стоп» у модели.'),
+                    ),
+                  if (ai.lastPerformance != null) ...[
+                    const Divider(height: 24),
+                    Text('Последний ответ',
+                        style: Theme.of(context).textTheme.titleMedium),
+                    const SizedBox(height: 8),
+                    Text('Скорость: '
+                        '${ai.lastPerformance!.tokensPerSecond.toStringAsFixed(1)} токена/с'),
+                    Text('Подготовка запроса: '
+                        '${(ai.lastPerformance!.prefillMs / 1000).toStringAsFixed(1)} с'),
+                    Text('Весь ответ: '
+                        '${(ai.lastPerformance!.totalMs / 1000).toStringAsFixed(1)} с'),
+                    Text('Сгенерировано: ${ai.lastPerformance!.generatedTokens} токенов'),
+                  ],
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           const Text('Важно: GGUF в приватной папке Termux здесь не виден. Сначала скопируй файл в «Загрузки». При импорте приложение создаст собственную копию модели.'),
         ],
