@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build native llama.cpp and publish APK
+    name: Build signed Baboon APK and publish Release
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -34,11 +34,10 @@ jobs:
         run: |
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;27.2.12479018" "cmake;3.22.1"
-      - name: Fetch llama.cpp source for Android native build
+      - name: Fetch pinned llama.cpp source
         shell: bash
         run: |
           set -euo pipefail
-          # Reproducible source revision, verified against the JNI API used here.
           LLAMA_REV=f2f667b02dc76d675395ae3b14546c8108d26387
           LLAMA_DIR=android/app/src/main/cpp/llama.cpp
           mkdir -p "$LLAMA_DIR"
@@ -47,34 +46,54 @@ jobs:
           git -C "$LLAMA_DIR" fetch --depth 1 origin "$LLAMA_REV"
           git -C "$LLAMA_DIR" checkout --detach FETCH_HEAD
           test "$(git -C "$LLAMA_DIR" rev-parse HEAD)" = "$LLAMA_REV"
+      - name: Restore permanent signing key
+        env:
+          BABOON_KEYSTORE_BASE64: ${{ secrets.BABOON_KEYSTORE_BASE64 }}
+          BABOON_STORE_PASSWORD: ${{ secrets.BABOON_STORE_PASSWORD }}
+          BABOON_KEY_PASSWORD: ${{ secrets.BABOON_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$BABOON_KEYSTORE_BASE64" || -z "$BABOON_STORE_PASSWORD" || -z "$BABOON_KEY_PASSWORD" ]]; then
+            echo "Required GitHub Secrets missing: BABOON_KEYSTORE_BASE64, BABOON_STORE_PASSWORD, BABOON_KEY_PASSWORD"
+            exit 1
+          fi
+          printf '%s' "$BABOON_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/baboon-release.p12"
+          echo "BABOON_KEYSTORE_PATH=$RUNNER_TEMP/baboon-release.p12" >> "$GITHUB_ENV"
+          keytool -list -keystore "$RUNNER_TEMP/baboon-release.p12" -storepass "$BABOON_STORE_PASSWORD" -alias baboon >/dev/null
       - name: Install dependencies and check Dart
         run: |
           flutter pub get
           flutter analyze
           flutter test
-      - name: Compile Android release APK (arm64-v8a)
+      - name: Compile signed Android release APK (arm64-v8a)
         env:
           RUN_NUMBER: ${{ github.run_number }}
-        run: |
-          flutter build apk --release --target-platform android-arm64 \
-            --build-name="0.2.${RUN_NUMBER}" --build-number="${RUN_NUMBER}"
-          cp build/app/outputs/flutter-apk/app-release.apk "moy-ai-v0.2.${RUN_NUMBER}.apk"
-      - name: Publish APK to GitHub Releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_NUMBER: ${{ github.run_number }}
-          GH_REPO: ${{ github.repository }}
+          BABOON_STORE_PASSWORD: ${{ secrets.BABOON_STORE_PASSWORD }}
+          BABOON_KEY_PASSWORD: ${{ secrets.BABOON_KEY_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="v0.2.${RUN_NUMBER}"
-          APK="moy-ai-${TAG}.apk"
+          flutter build apk --release --target-platform android-arm64 \
+            --build-name="0.3.${RUN_NUMBER}" --build-number="${RUN_NUMBER}"
+          cp build/app/outputs/flutter-apk/app-release.apk "baboon-v0.3.${RUN_NUMBER}.apk"
+          sha256sum "baboon-v0.3.${RUN_NUMBER}.apk" > "baboon-v0.3.${RUN_NUMBER}.apk.sha256"
+      - name: Publish stable GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_NUMBER: ${{ github.run_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v0.3.${RUN_NUMBER}"
+          APK="baboon-${TAG}.apk"
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" "${APK}" --clobber
+            gh release upload "${TAG}" "${APK}" "${APK}.sha256" --clobber
           else
-            gh release create "${TAG}" "${APK}" \
+            gh release create "${TAG}" "${APK}" "${APK}.sha256" \
               --target "${GITHUB_SHA}" \
-              --title "Мой ИИ ${TAG} · Native Qwen" \
-              --notes "Ручная тестовая сборка. Native llama.cpp на Android ARM64. GGUF импортируется отдельно. Подпись пока тестовая." \
-              --prerelease
+              --title "Бабуин ${TAG}" \
+              --notes "Бабуин: встроенные обновления через GitHub Releases, локальный Qwen, ручная сборка. Подписано постоянным ключом." \
+              --latest
           fi
