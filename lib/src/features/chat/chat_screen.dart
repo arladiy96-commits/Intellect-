@@ -340,17 +340,24 @@ class _ChatScreenState extends State<ChatScreen> {
     _toBottom();
 
     String response = '';
+    final paintClock = Stopwatch()..start();
     try {
       await for (final part in _engine.streamReply(prompt)) {
         response += part;
         if (!mounted) break;
+        // Groq may stream hundreds of chunks per second. Repaint no more
+        // often than about 20 times/s, without dropping any text.
+        if (paintClock.elapsedMilliseconds < 50) continue;
+        paintClock.reset();
         setState(() => _messages[targetIndex] = AiMessage(role: 'assistant', text: response));
         _toBottom();
       }
-      if (mounted && response.isEmpty) {
-        setState(() => _messages[targetIndex] = const AiMessage(
-          role: 'assistant', text: 'Модель не вернула текст. Попробуй ещё раз.',
+      if (mounted) {
+        setState(() => _messages[targetIndex] = AiMessage(
+          role: 'assistant', text: response.isEmpty
+              ? 'Модель не вернула текст. Попробуй ещё раз.' : response,
         ));
+        _toBottom();
       }
     } catch (e) {
       if (mounted) {
@@ -432,7 +439,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
                     const Icon(Icons.psychology_outlined, size: 64),
                     const SizedBox(height: 16),
-                    Text('Бабуин — локальный ИИ', style: Theme.of(context).textTheme.titleLarge),
+                    Text('Бабуин — локальный и облачный ИИ', style: Theme.of(context).textTheme.titleLarge),
                     const SizedBox(height: 8),
                     const Text('Напиши вопрос. Чаты сохраняются на телефоне, даже после закрытия приложения.', textAlign: TextAlign.center),
                   ]),
