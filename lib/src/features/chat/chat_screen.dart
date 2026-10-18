@@ -432,6 +432,27 @@ class _ChatScreenState extends State<ChatScreen> {
             ]),
           ),
         ),
+        if (_engine.cloudEnabled &&
+            (_engine.cloudLastUsage != null || _engine.cloudGroqQuota != null))
+          Container(
+            width: double.infinity,
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+            child: Text(
+              [
+                if (_engine.cloudLastUsage != null)
+                  'Токены: ${_engine.cloudLastUsage!.promptTokens} вход / '
+                  '${_engine.cloudLastUsage!.completionTokens} выход '
+                  '(всего ${_engine.cloudLastUsage!.totalTokens})',
+                if (_engine.cloudProviderTitle == 'Groq' &&
+                    _engine.cloudGroqQuota?.minuteTokensRemaining != null)
+                  'Доступно: ${_engine.cloudGroqQuota!.minuteTokensRemaining} т/мин',
+              ].join('  ·  '),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
         Expanded(
           child: _messages.isEmpty
               ? Center(child: Padding(
