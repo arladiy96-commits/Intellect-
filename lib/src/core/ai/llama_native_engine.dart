@@ -43,6 +43,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
         });
     unawaited(refreshModels());
     unawaited(refreshCpuThreads());
+    unawaited(refreshGpuSettings());
   }
 
   static final LlamaNativeEngine instance = LlamaNativeEngine._();
@@ -55,6 +56,10 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
   String status = 'Выбери GGUF в разделе «Модели»';
   double? importProgress;
   int cpuThreads = 4;
+  int gpuLayers = 0;
+  int appliedGpuLayers = 0;
+  String? gpuDeviceName;
+  String? gpuWarning;
   GenerationPerformance? lastPerformance;
   bool isBusy = false;
   bool isGenerating = false;
@@ -105,6 +110,36 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     notifyListeners();
   }
 
+  Future<void> refreshGpuSettings() async {
+    try {
+      gpuLayers = await _channel.invokeMethod<int>('getGpuLayers') ?? 0;
+      final recovered = await _channel.invokeMethod<bool>('getGpuRecovery') ?? false;
+      if (recovered) {
+        gpuWarning = 'Vulkan прервался при загрузке. Для безопасности возвращён CPU.';
+      }
+      notifyListeners();
+    } on Exception catch (_) {
+      // Remain on CPU when the native bridge does not expose GPU settings.
+    }
+  }
+
+  Future<void> setGpuLayers(int layers) async {
+    if (isBusy || isGenerating || isModelLoaded) {
+      throw StateError('Сначала выгрузи модель');
+    }
+    if (![0, 8, 16, 32, 99].contains(layers)) {
+      throw ArgumentError.value(layers, 'layers');
+    }
+    await _channel.invokeMethod<void>('setGpuLayers', {'layers': layers});
+    gpuLayers = layers;
+    gpuWarning = null;
+    lastPerformance = null;
+    status = layers == 0
+        ? 'Режим CPU. Теперь запусти модель.'
+        : 'Выбрано $layers GPU-слоёв. Запусти модель для проверки Vulkan.';
+    notifyListeners();
+  }
+
   Future<void> refreshModels() async {
     try {
       final results = await _channel.invokeListMethod<dynamic>('listModels');
@@ -147,12 +182,22 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     status = 'Загрузка модели в оперативную память…';
     notifyListeners();
     try {
-      await _channel.invokeMethod<void>('loadModel', {'path': modelPath});
+      final result = await _channel.invokeMapMethod<dynamic, dynamic>(
+        'loadModel', {'path': modelPath});
       activeModelPath = modelPath;
+      appliedGpuLayers = (result?['gpuLayers'] as num?)?.toInt() ?? 0;
+      gpuLayers = appliedGpuLayers;
+      gpuDeviceName = result?['gpuName']?.toString();
+      final fallback = result?['fallback']?.toString() ?? '';
+      gpuWarning = fallback.isEmpty ? null
+          : 'Vulkan не запустился: $fallback. Автоматически включён CPU.';
       lastPerformance = null;
-      status = 'Модель готова к работе ($cpuThreads CPU-потоков)';
+      status = appliedGpuLayers > 0
+          ? 'Vulkan GPU: $appliedGpuLayers слоёв ($cpuThreads CPU-потоков)'
+          : 'CPU: $cpuThreads потоков${fallback.isEmpty ? '' : ' (GPU недоступен)'}';
     } on PlatformException catch (e) {
       activeModelPath = null;
+      appliedGpuLayers = 0;
       status = 'Не удалось загрузить: ${e.message}';
       rethrow;
     } finally {
@@ -169,6 +214,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     try {
       await _channel.invokeMethod<void>('unloadModel');
       activeModelPath = null;
+      appliedGpuLayers = 0;
       status = 'Модель выгружена';
     } finally {
       isBusy = false;
