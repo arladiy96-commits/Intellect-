@@ -77,10 +77,20 @@ void batch_set(llama_batch_ext * batch, const llama_token * tokens, int count, l
     llama_batch_ext_set_output_logits(batch, count - 1, true);
 }
 
+// Mobile Vulkan adapters normally use host RAM and are registered as IGPU.
+// A lookup for only GPU misses these devices even if Vulkan works correctly.
+ggml_backend_dev_t find_gpu_device() {
+    ggml_backend_dev_t device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    if (!device) {
+        device = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_IGPU);
+    }
+    return device;
+}
+
 // Returns the GPU name only after the user opts in to GPU mode. Avoids
 // explicit GPU probing at regular app startup.
 jstring native_gpu_description(JNIEnv * env, jobject) {
-    ggml_backend_dev_t dev = ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU);
+    ggml_backend_dev_t dev = find_gpu_device();
     if (!dev) return nullptr;
     const char * description = ggml_backend_dev_description(dev);
     return env->NewStringUTF(description ? description : "Vulkan GPU");
@@ -98,7 +108,7 @@ jstring native_load(JNIEnv * env, jobject, jstring jpath, jint requested_threads
     const int gpu_layers = std::clamp<int>(requested_gpu_layers, 0, 99);
     if (gpu_layers > 0) {
         // Fail cleanly on unsupported Vulkan devices. Kotlin retries in CPU mode.
-        if (!ggml_backend_dev_by_type(GGML_BACKEND_DEVICE_TYPE_GPU)) {
+        if (!find_gpu_device()) {
             return fail(env, "Vulkan GPU недоступен в этой конфигурации устройства");
         }
     }
