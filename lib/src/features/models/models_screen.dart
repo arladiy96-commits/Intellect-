@@ -57,6 +57,67 @@ class ModelsScreen extends StatelessWidget {
                       ),
               ),
             ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Ускорение GPU · Vulkan (эксперимент)',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  const Text('Начни с 8 GPU-слоёв. 16/32 — гибрид CPU+GPU, '
+                      '99 — попытка выгрузить максимально возможную часть модели на GPU. '
+                      'Больше не обязательно быстрее; режим 99 может потребовать много памяти.'),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final layers in [0, 8, 16, 32, 99])
+                        ChoiceChip(
+                          label: Text(layers == 0 ? 'CPU' :
+                              layers == 99 ? 'GPU макс.' : 'GPU $layers'),
+                          selected: ai.gpuLayers == layers,
+                          onSelected: ai.isBusy || ai.isGenerating || ai.isModelLoaded
+                              ? null
+                              : (selected) async {
+                                  if (!selected) return;
+                                  try {
+                                    await ai.setGpuLayers(layers);
+                                  } catch (error) {
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(content: Text('$error')),
+                                      );
+                                    }
+                                  }
+                                },
+                        ),
+                    ],
+                  ),
+                  if (ai.isModelLoaded)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(ai.appliedGpuLayers == 0
+                          ? 'Работает CPU'
+                          : 'Работает Vulkan: ${ai.appliedGpuLayers} GPU-слоёв'),
+                    ),
+                  if (ai.gpuWarning != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(ai.gpuWarning!,
+                          style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                    ),
+                  const SizedBox(height: 8),
+                  const Text('Для смены режима останови модель. При обычной ошибке GPU '
+                      'Бабуин попробует CPU; при аварийном завершении сбросит настройку '
+                      'на CPU при следующем запуске.'),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 18),
           Card(
             child: Padding(
