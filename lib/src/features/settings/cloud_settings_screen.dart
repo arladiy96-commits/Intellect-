@@ -259,19 +259,94 @@ class _CloudSettingsScreenState extends State<CloudSettingsScreen> {
                   'Включение резервного провайдера всегда ручное.'),
             ]),
           )),
-          if (isGroq && _ai.cloudRemainingRequests != null) ...[
+          if (isGroq) ...[
+          const SizedBox(height: 12),
+          Card(child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Icon(Icons.data_usage_outlined),
+                const SizedBox(width: 8),
+                Text('Расход токенов',
+                    style: Theme.of(context).textTheme.titleMedium),
+              ]),
+              const SizedBox(height: 8),
+              if (_ai.cloudLastUsage != null) ...[
+                const Text('Последний ответ (точные данные API)'),
+                const SizedBox(height: 6),
+                Text('Вход: ${_ai.cloudLastUsage!.promptTokens} · '
+                    'Выход: ${_ai.cloudLastUsage!.completionTokens}'),
+                Text('Всего: ${_ai.cloudLastUsage!.totalTokens} токенов'),
+                if (_ai.cloudLastUsage!.model.isNotEmpty)
+                  Text('Модель: ${_ai.cloudLastUsage!.model}',
+                    style: Theme.of(context).textTheme.bodySmall),
+              ] else
+                const Text('Пока нет статистики. Отправь запрос облачной модели.'),
+              const Divider(height: 24),
+              const Text('За сегодня на этом телефоне'),
+              const SizedBox(height: 6),
+              Text('Запросов: ${_ai.cloudTodayUsage.requests}'),
+              Text('Вход: ${_ai.cloudTodayUsage.promptTokens} · '
+                  'Выход: ${_ai.cloudTodayUsage.completionTokens}'),
+              Text('Всего: ${_ai.cloudTodayUsage.totalTokens} токенов'),
+              const SizedBox(height: 8),
+              Text('Локальный счётчик: не включает запросы из других '
+                  'приложений, сайта или другие ключи. Учитывает ответы, '
+                  'для которых API прислал статистику.',
+                  style: Theme.of(context).textTheme.bodySmall),
+            ]),
+          )),
+          ],
+          if (isGroq) ...[
             const SizedBox(height: 12),
             Card(child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('Доступная квота (последний ответ)',
+                Text('Доступные лимиты Groq',
                     style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                Text('Запросов за день: ${_ai.cloudRemainingRequests}'),
-                if (_ai.cloudRemainingTokens != null)
-                  Text('Токенов в минуту: ${_ai.cloudRemainingTokens}'),
-                const Text('Показатели приходят от Groq после запроса и '
-                    'могут измениться. Дневные лимиты зависят от аккаунта.'),
+                if (_ai.cloudGroqQuota == null)
+                  const Text('После следующего запроса Groq пришлёт '
+                      'доступные лимиты в заголовках ответа.')
+                else ...[
+                  Text('Запросов на день: '
+                      '${_ai.cloudGroqQuota!.requestsRemaining ?? '—'}'
+                      ' / ${_ai.cloudGroqQuota!.requestLimit ?? '—'}'),
+                  if (_ai.cloudGroqQuota!.requestLimit != null &&
+                      _ai.cloudGroqQuota!.requestsRemaining != null &&
+                      _ai.cloudGroqQuota!.requestLimit! > 0) ...[
+                    const SizedBox(height: 5),
+                    LinearProgressIndicator(value: (_ai.cloudGroqQuota!.requestsRemaining! /
+                        _ai.cloudGroqQuota!.requestLimit!).clamp(0.0, 1.0).toDouble()),
+                  ],
+                  if (_ai.cloudGroqQuota!.requestsReset != null)
+                    Text('Сброс лимита запросов через: '
+                        '${_ai.cloudGroqQuota!.requestsReset}',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 10),
+                  Text('Токенов в минуту: '
+                      '${_ai.cloudGroqQuota!.minuteTokensRemaining ?? '—'}'
+                      ' / ${_ai.cloudGroqQuota!.minuteTokenLimit ?? '—'}'),
+                  if (_ai.cloudGroqQuota!.minuteTokenLimit != null &&
+                      _ai.cloudGroqQuota!.minuteTokensRemaining != null &&
+                      _ai.cloudGroqQuota!.minuteTokenLimit! > 0) ...[
+                    const SizedBox(height: 5),
+                    LinearProgressIndicator(value: (_ai.cloudGroqQuota!.minuteTokensRemaining! /
+                        _ai.cloudGroqQuota!.minuteTokenLimit!).clamp(0.0, 1.0).toDouble()),
+                  ],
+                  if (_ai.cloudGroqQuota!.tokensReset != null)
+                    Text('Обновление минутного лимита через: '
+                        '${_ai.cloudGroqQuota!.tokensReset}',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  const SizedBox(height: 8),
+                  Text('Последнее обновление: '
+                      '${_ai.cloudGroqQuota!.receivedAt.hour.toString().padLeft(2, '0')}:'
+                      '${_ai.cloudGroqQuota!.receivedAt.minute.toString().padLeft(2, '0')}'),
+                ],
+                const SizedBox(height: 8),
+                const Text('Groq не сообщает через эти заголовки остаток '
+                    'дневного лимита токенов. Точные лимиты аккаунта: '
+                    'console.groq.com/settings/limits'),
               ]),
             )),
           ],
