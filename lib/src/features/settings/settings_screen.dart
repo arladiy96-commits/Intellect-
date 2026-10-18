@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'updates_screen.dart';
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -9,6 +11,18 @@ class SettingsScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Text('Настройки', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.system_update_alt),
+            title: const Text('Обновления'),
+            subtitle: const Text('Проверить и установить APK из GitHub Releases'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const UpdatesScreen()),
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
         const Card(
           child: ListTile(
