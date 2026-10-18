@@ -4,7 +4,7 @@ package ai.moy.moy_ai
 object LocalLlamaBridge {
     init { System.loadLibrary("moy_ai_native") }
 
-    external fun nativeLoad(path: String): String?
+    external fun nativeLoad(path: String, threads: Int): String?
     external fun nativeUnload()
     external fun nativeGenerate(roles: Array<String>, messages: Array<String>, maxTokens: Int): String?
     external fun nativeStop()
@@ -13,4 +13,11 @@ object LocalLlamaBridge {
     @Volatile var onToken: ((String) -> Unit)? = null
     @Suppress("unused")
     fun emitToken(text: String) { onToken?.invoke(text) }
+
+    @Volatile var onPerformance: ((Double, Double, Double, Int) -> Unit)? = null
+    @Suppress("unused")
+    fun emitPerformance(prefillMs: Double, tokensPerSecond: Double,
+                        totalMs: Double, generatedTokens: Int) {
+        onPerformance?.invoke(prefillMs, tokensPerSecond, totalMs, generatedTokens)
+    }
 }

@@ -43,9 +43,26 @@ class MainActivity : FlutterActivity() {
                 override fun onCancel(arguments: Any?) { eventSink = null }
             })
         LocalLlamaBridge.onToken = { token -> emit("token", "text" to token) }
+        LocalLlamaBridge.onPerformance = { prefillMs, tps, totalMs, generatedTokens ->
+            emit("performance", "prefillMs" to prefillMs,
+                "tokensPerSecond" to tps, "totalMs" to totalMs,
+                "generatedTokens" to generatedTokens)
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "getCpuThreads" -> result.success(prefs.getInt("cpu_threads", 4))
+                    "setCpuThreads" -> {
+                        val threads = call.argument<Int>("threads") ?: 4
+                        if (threads !in listOf(4, 6, 8)) {
+                            result.error("INVALID_THREADS", "Допустимы 4, 6 или 8 потоков", null)
+                        } else if (activeModelPath != null) {
+                            result.error("MODEL_LOADED", "Сначала выгрузи модель", null)
+                        } else {
+                            prefs.edit().putInt("cpu_threads", threads).apply()
+                            result.success(null)
+                        }
+                    }
                     "listModels" -> result.success(storedModels())
                     "importModel" -> {
                         if (pendingPicker != null) {
@@ -74,7 +91,8 @@ class MainActivity : FlutterActivity() {
                                 try {
                                     LocalLlamaBridge.nativeUnload()
                                     activeModelPath = null
-                                    val err = LocalLlamaBridge.nativeLoad(path)
+                                    val threads = prefs.getInt("cpu_threads", 4).coerceIn(4, 8)
+                                    val err = LocalLlamaBridge.nativeLoad(path, threads)
                                     ui.post {
                                         if (err == null) {
                                             activeModelPath = path
@@ -207,6 +225,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         LocalLlamaBridge.onToken = null
+        LocalLlamaBridge.onPerformance = null
         worker.execute { try { LocalLlamaBridge.nativeUnload() } catch (_: Throwable) { } }
         worker.shutdown()
         super.onDestroy()
