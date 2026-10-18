@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'cloud_settings_screen.dart';
+import '../knowledge/knowledge_screen.dart';
 import 'updates_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -12,6 +13,18 @@ class SettingsScreen extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       children: [
         Text('Настройки', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.library_books_outlined),
+            title: const Text('База знаний Бабуина'),
+            subtitle: const Text('Коллекции, документы, импорт и локальный поиск'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const KnowledgeScreen()),
+            ),
+          ),
+        ),
         const SizedBox(height: 12),
         Card(
           child: ListTile(
