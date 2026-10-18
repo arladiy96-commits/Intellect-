@@ -39,11 +39,19 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("baboonRelease") {
+            storeFile = file(System.getenv("BABOON_KEYSTORE_PATH") ?: "missing-baboon-signing-key.p12")
+            storePassword = System.getenv("BABOON_STORE_PASSWORD") ?: ""
+            keyAlias = "baboon"
+            keyPassword = System.getenv("BABOON_KEY_PASSWORD") ?: ""
+        }
+    }
+
     buildTypes {
         release {
-            // Temporary development-only signature. Configure a persistent key
-            // before installing multiple updates on the same phone.
-            signingConfig = signingConfigs.getByName("debug")
+            // Persistent private signing key, sourced ONLY from GitHub Secrets.
+            signingConfig = signingConfigs.getByName("baboonRelease")
             // JNI calls emitToken(String) by name from C++. R8 must keep it.
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -57,6 +65,11 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+dependencies {
+    // FileProvider sends the APK securely to Android's system installer.
+    implementation("androidx.core:core:1.15.0")
 }
 
 flutter {
