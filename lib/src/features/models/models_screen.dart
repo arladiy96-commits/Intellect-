@@ -67,16 +67,16 @@ class ModelsScreen extends StatelessWidget {
                   Text('Производительность CPU',
                       style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
-                  const Text('Выбери число потоков и запусти модель заново. '
-                      'Больше потоков не всегда означает быстрее.'),
+                  const Text('Проверь 1, 2 и 4 потока: на некоторых CPU больше потоков '
+                      'означает меньшую скорость. Модель нужно перезапускать.'),
                   const SizedBox(height: 12),
                   Wrap(
                     spacing: 8,
                     runSpacing: 4,
                     children: [
-                      for (final threads in [4, 6, 8])
+                      for (final threads in [1, 2, 4, 6, 8])
                         ChoiceChip(
-                          label: Text('$threads ${threads == 4 ? 'потока' : 'потоков'}'),
+                          label: Text('$threads ${threads == 1 ? 'поток' : (threads == 2 || threads == 4) ? 'потока' : 'потоков'}'),
                           selected: ai.cpuThreads == threads,
                           onSelected: ai.isBusy || ai.isGenerating || ai.isModelLoaded
                               ? null
