@@ -28,6 +28,17 @@ class MainActivity : FlutterActivity() {
     @Volatile private var activeModelPath: String? = null
     private val prefs by lazy { getSharedPreferences("local_models_v1", MODE_PRIVATE) }
 
+    // A GPU driver can kill the process without throwing a Kotlin exception.
+    // On next launch reset to CPU, rather than crashing repeatedly at startup.
+    private fun recoverInterruptedGpuLoad() {
+        if (prefs.getBoolean("gpu_load_pending", false) ||
+            prefs.getBoolean("gpu_run_pending", false)) {
+            prefs.edit().putInt("gpu_layers", 0)
+                .remove("gpu_load_pending").remove("gpu_run_pending")
+                .putBoolean("gpu_recovered", true).commit()
+        }
+    }
+
     private fun emit(type: String, vararg values: Pair<String, Any?>) {
         val event = mutableMapOf<String, Any?>("type" to type)
         event.putAll(values)
@@ -36,6 +47,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        recoverInterruptedGpuLoad()
         UpdateBridge.register(this, flutterEngine.dartExecutor.binaryMessenger)
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, eventsName)
             .setStreamHandler(object : EventChannel.StreamHandler {
@@ -51,6 +63,23 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
+                    "getGpuLayers" -> result.success(prefs.getInt("gpu_layers", 0))
+                    "getGpuRecovery" -> {
+                        val recovered = prefs.getBoolean("gpu_recovered", false)
+                        prefs.edit().remove("gpu_recovered").apply()
+                        result.success(recovered)
+                    }
+                    "setGpuLayers" -> {
+                        val layers = call.argument<Int>("layers") ?: 0
+                        if (layers !in listOf(0, 8, 16, 32, 99)) {
+                            result.error("INVALID_GPU", "Допустимы 0, 8, 16, 32 или 99 слоёв", null)
+                        } else if (activeModelPath != null) {
+                            result.error("MODEL_LOADED", "Сначала выгрузи модель", null)
+                        } else {
+                            prefs.edit().putInt("gpu_layers", layers).apply()
+                            result.success(null)
+                        }
+                    }
                     "getCpuThreads" -> result.success(prefs.getInt("cpu_threads", 4))
                     "setCpuThreads" -> {
                         val threads = call.argument<Int>("threads") ?: 4
@@ -92,11 +121,33 @@ class MainActivity : FlutterActivity() {
                                     LocalLlamaBridge.nativeUnload()
                                     activeModelPath = null
                                     val threads = prefs.getInt("cpu_threads", 4).coerceIn(1, 8)
-                                    val err = LocalLlamaBridge.nativeLoad(path, threads)
+                                    val requestedGpuLayers = prefs.getInt("gpu_layers", 0)
+                                    var actualGpuLayers = requestedGpuLayers
+                                    var fallbackReason: String? = null
+                                    // Commit is deliberate: persists even after an abrupt native crash.
+                                    if (requestedGpuLayers > 0) {
+                                        prefs.edit().putBoolean("gpu_load_pending", true).commit()
+                                    }
+                                    var err = LocalLlamaBridge.nativeLoad(path, threads, requestedGpuLayers)
+                                    if (err != null && requestedGpuLayers > 0) {
+                                        fallbackReason = err
+                                        // If GPU initialization fails, keep the model usable on CPU.
+                                        actualGpuLayers = 0
+                                        prefs.edit().putInt("gpu_layers", 0).commit()
+                                        err = LocalLlamaBridge.nativeLoad(path, threads, 0)
+                                    }
+                                    val gpuName = if (err == null && actualGpuLayers > 0) {
+                                        try { LocalLlamaBridge.nativeGpuDescription() } catch (_: Throwable) { null }
+                                    } else null
+                                    prefs.edit().remove("gpu_load_pending").commit()
                                     ui.post {
                                         if (err == null) {
                                             activeModelPath = path
-                                            result.success(null)
+                                            result.success(mapOf(
+                                                "gpuLayers" to actualGpuLayers,
+                                                "gpuName" to (gpuName ?: ""),
+                                                "fallback" to (fallbackReason ?: "")
+                                            ))
                                         } else result.error("LOAD_FAILED", err, null)
                                     }
                                 } catch (e: Throwable) {
@@ -125,11 +176,16 @@ class MainActivity : FlutterActivity() {
                                 try {
                                     val roles = items.map { it["role"] ?: "user" }.toTypedArray()
                                     val texts = items.map { it["text"] ?: "" }.toTypedArray()
+                                    if (prefs.getInt("gpu_layers", 0) > 0) {
+                                        prefs.edit().putBoolean("gpu_run_pending", true).commit()
+                                    }
                                     val error = LocalLlamaBridge.nativeGenerate(roles, texts, maxTokens)
                                     if (error == null) emit("done")
                                     else emit("error", "message" to error)
                                 } catch (e: Throwable) {
                                     emit("error", "message" to (e.message ?: "Ошибка nativeGenerate"))
+                                } finally {
+                                    prefs.edit().remove("gpu_run_pending").commit()
                                 }
                             }
                             result.success(null)

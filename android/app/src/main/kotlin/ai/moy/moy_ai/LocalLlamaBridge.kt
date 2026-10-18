@@ -4,7 +4,8 @@ package ai.moy.moy_ai
 object LocalLlamaBridge {
     init { System.loadLibrary("moy_ai_native") }
 
-    external fun nativeLoad(path: String, threads: Int): String?
+    external fun nativeLoad(path: String, threads: Int, gpuLayers: Int): String?
+    external fun nativeGpuDescription(): String?
     external fun nativeUnload()
     external fun nativeGenerate(roles: Array<String>, messages: Array<String>, maxTokens: Int): String?
     external fun nativeStop()
