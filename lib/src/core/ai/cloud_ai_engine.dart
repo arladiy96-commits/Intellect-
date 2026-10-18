@@ -152,7 +152,7 @@ Map<String, Object> buildCloudRequest(
   if (provider == CloudProvider.groq) {
     if (model.startsWith('openai/gpt-oss-')) {
       body['include_reasoning'] = false;
-      body['reasoning_effort'] = model.endsWith('20b') ? 'low' : 'medium';
+      body['reasoning_effort'] = model == 'openai/gpt-oss-20b' ? 'low' : 'medium';
     } else if (model.startsWith('qwen/')) {
       body['reasoning_format'] = 'hidden';
       body['reasoning_effort'] = 'none';
