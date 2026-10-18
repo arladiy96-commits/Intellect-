@@ -95,7 +95,7 @@ class LlamaNativeEngine extends ChangeNotifier implements AiEngine {
     if (isBusy || isGenerating || isModelLoaded) {
       throw StateError('Сначала выгрузи модель');
     }
-    if (![4, 6, 8].contains(threads)) {
+    if (![1, 2, 4, 6, 8].contains(threads)) {
       throw ArgumentError.value(threads, 'threads');
     }
     await _channel.invokeMethod<void>('setCpuThreads', {'threads': threads});
