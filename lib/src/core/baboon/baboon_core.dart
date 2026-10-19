@@ -36,7 +36,9 @@ class BaboonCore {
     final normalized = question.trim().toLowerCase();
     if (normalized.startsWith('найди в базе ') ||
         normalized.startsWith('поиск в знаниях:') ||
-        normalized.startsWith('найди в знаниях ')) return 'knowledge.search';
+        normalized.startsWith('найди в знаниях ')) {
+      return 'knowledge.search';
+    }
     return null;
   }
 
