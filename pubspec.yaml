@@ -21,3 +21,8 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/images/baboon_hero.jpg
+    - assets/images/baboon_avatar.png
+    - assets/images/textbook_demo.jpg
+    - assets/images/photo_demo.jpg
