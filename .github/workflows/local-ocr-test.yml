@@ -47,16 +47,23 @@ jobs:
         run: |
           set -euo pipefail
           yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "ndk;29.0.14206865" "cmake;3.22.1" "build-tools;36.1.0"
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "ndk;29.0.14206865" "cmake;3.22.1" "build-tools;36.1.0"
 
       - name: Update demo compile API for current AndroidX libraries
         shell: bash
         run: |
           set -euo pipefail
           cd upstream-ocr
-          grep -q 'version = release(36)' app/build.gradle.kts
-          sed -i 's/version = release(36)/version = release(37)/' app/build.gradle.kts
-          printf '\nandroid.suppressUnsupportedCompileSdk=37\n' >> gradle.properties
+          # Keep the upstream API level 36 while pinning AndroidX Core to
+          # a version compatible with that SDK (new transitive 1.19 needs API 37).
+          grep -q 'coreKtx = "1.18.0"' gradle/libs.versions.toml
+          sed -i 's/coreKtx = "1.18.0"/coreKtx = "1.16.0"/' gradle/libs.versions.toml
+          cat >> app/build.gradle.kts <<'EOF'
+
+configurations.configureEach {
+  resolutionStrategy.force("androidx.core:core:1.16.0", "androidx.core:core-ktx:1.16.0")
+}
+EOF
 
       - name: Build Android debug APK (test only)
         shell: bash
