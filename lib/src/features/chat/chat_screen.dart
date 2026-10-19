@@ -8,6 +8,9 @@ import '../../core/baboon/baboon_core.dart';
 import '../../core/memory/conversation_repository.dart';
 import '../../core/memory/shared_memory_store.dart';
 import '../memory/memory_screen.dart';
+import '../knowledge/knowledge_editor_screen.dart';
+import '../tools/photo_preview_screen.dart';
+import '../../ui/baboon_style.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -313,6 +316,51 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  void _attachments() {
+    if (_sending) return;
+    showModalBottomSheet<void>(context: context, showDragHandle: true,
+      backgroundColor: BaboonColors.surface,
+      builder: (sheetContext) => SafeArea(child: Column(
+        mainAxisSize: MainAxisSize.min, children: [
+          ListTile(leading: const Icon(Icons.note_add_outlined),
+            title: const Text('Добавить знание'),
+            subtitle: const Text('Текст или файл TXT/MD'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              Navigator.push(context, MaterialPageRoute<void>(
+                builder: (_) => const KnowledgeEditorScreen()));
+            }),
+          ListTile(leading: const Icon(Icons.camera_alt_outlined),
+            title: const Text('Анализ фото'),
+            subtitle: const Text('Макет · OCR подключим позже'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              Navigator.push(context, MaterialPageRoute<void>(
+                builder: (_) => const PhotoPreviewScreen()));
+            }),
+          ListTile(leading: const Icon(Icons.attach_file_outlined),
+            title: const Text('Файл к сообщению'),
+            subtitle: const Text('Подключим в следующем этапе'),
+            onTap: () {
+              Navigator.pop(sheetContext);
+              baboonSoon(context, 'Вложения',
+                'Добавление файла прямо в запрос подключим позже. '
+                'TXT/MD можно уже сохранять в базе знаний.');
+            }),
+        ])),
+      );
+  }
+
+  void _followUp(String value) {
+    if (_sending || !_ready) return;
+    _controller.text = value;
+    if (_engine.isModelLoaded) {
+      unawaited(_send());
+    } else {
+      _showError('Для нового объяснения включи облачную или локальную модель.');
+    }
+  }
+
   Future<void> _send() async {
     final question = _controller.text.trim();
     if (question.isEmpty || !_ready || _sending) return;
@@ -416,7 +464,7 @@ class _ChatScreenState extends State<ChatScreen> {
       animation: _engine,
       builder: (context, _) => Column(children: [
         Material(
-          color: Theme.of(context).colorScheme.surfaceContainer,
+          color: BaboonColors.background,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
             child: Row(children: [
@@ -433,7 +481,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     orElse: () => ChatThread(id: '', title: 'Диалог', createdAt: DateTime.now(), updatedAt: DateTime.now(), messages: const []),
                   ).title, maxLines: 1, overflow: TextOverflow.ellipsis),
                   Text(_engine.isModelLoaded ? _engine.status : 'Без модели доступны математические инструменты и поиск по знаниям',
-                    style: Theme.of(context).textTheme.bodySmall, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    style: const TextStyle(fontSize: 11, color: BaboonColors.muted), maxLines: 1, overflow: TextOverflow.ellipsis),
                 ],
               )),
               IconButton(
@@ -453,7 +501,7 @@ class _ChatScreenState extends State<ChatScreen> {
             (_engine.cloudLastUsage != null || _engine.cloudGroqQuota != null))
           Container(
             width: double.infinity,
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            color: BaboonColors.surface,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
             child: Text(
               [
@@ -489,21 +537,50 @@ class _ChatScreenState extends State<ChatScreen> {
                   itemBuilder: (context, index) {
                     final message = _messages[index];
                     final isUser = message.role == 'user';
-                    return Align(
-                      alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .88),
-                        child: GestureDetector(
-                          onLongPress: _sending || message.text.isEmpty ? null : () => _editNote(initialText: message.text.length > 300 ? message.text.substring(0, 300) : message.text),
-                          child: Card(
-                            color: isUser ? Theme.of(context).colorScheme.primaryContainer : null,
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Text(message.text.isEmpty ? '● ● ●' : message.text),
+                    final lastAssistant = index == _messages.length - 1 && !isUser &&
+                        message.text.isNotEmpty && !_sending;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 9),
+                      child: Column(crossAxisAlignment: isUser
+                        ? CrossAxisAlignment.end : CrossAxisAlignment.start, children: [
+                        if (!isUser) const Padding(
+                          padding: EdgeInsets.only(left: 5, bottom: 4),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            BaboonAvatar(radius: 11), SizedBox(width: 6),
+                            Text('Бабуин', style: TextStyle(
+                              fontSize: 11, color: BaboonColors.gold)),
+                          ])),
+                        Align(alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .88),
+                            child: GestureDetector(
+                              onLongPress: _sending || message.text.isEmpty ? null : () =>
+                                _editNote(initialText: message.text.length > 300
+                                  ? message.text.substring(0, 300) : message.text),
+                              child: Container(
+                                padding: const EdgeInsets.all(13),
+                                decoration: BoxDecoration(
+                                  color: isUser ? BaboonColors.blue : BaboonColors.surface,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(color: isUser
+                                    ? BaboonColors.blue : BaboonColors.border),
+                                ),
+                                child: SelectableText(message.text.isEmpty ? '● ● ●' : message.text,
+                                  style: const TextStyle(fontSize: 14.5, height: 1.5)),
+                              ),
                             ),
-                          ),
-                        ),
-                      ),
+                          )),
+                        if (lastAssistant) Padding(
+                          padding: const EdgeInsets.only(top: 9),
+                          child: Wrap(spacing: 6, runSpacing: 2, children: [
+                            ActionChip(label: const Text('Объясни проще'),
+                              onPressed: () => _followUp('Объясни последнее решение проще и по шагам')),
+                            ActionChip(label: const Text('Другой пример'),
+                              onPressed: () => _followUp('Приведи похожий пример с решением')),
+                            ActionChip(label: const Text('Похожее задание'),
+                              onPressed: () => _followUp('Придумай похожее задание для тренировки')),
+                          ])),
+                      ]),
                     );
                   },
                 ),
@@ -513,6 +590,8 @@ class _ChatScreenState extends State<ChatScreen> {
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Row(children: [
+              IconButton(icon: const Icon(Icons.add, color: BaboonColors.gold),
+                tooltip: 'Вложения и файлы', onPressed: _sending ? null : _attachments),
               Expanded(child: TextField(
                 controller: _controller,
                 minLines: 1,
@@ -525,8 +604,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 onSubmitted: (_) => _send(),
               )),
-              const SizedBox(width: 8),
+              IconButton(icon: const Icon(Icons.mic_none_outlined, size: 20),
+                tooltip: 'Голосовой ввод', onPressed: () => baboonSoon(context,
+                  'Голос', 'Голосовой ввод будет добавлен позже.')),
+              const SizedBox(width: 4),
               IconButton.filled(
+                style: IconButton.styleFrom(backgroundColor: const Color(0xFF91B8F9),
+                  foregroundColor: const Color(0xFF082145)),
                 tooltip: _sending ? 'Остановить' : 'Отправить',
                 icon: Icon(_sending ? Icons.stop_rounded : Icons.send_rounded),
                 onPressed: _sending ? _engine.stop : (_ready ? _send : null),
