@@ -90,10 +90,12 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
         FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Удалить')),
       ],
     ));
-    if (ok == true) await _run(() async {
-      await repo.deleteCollection(c.id);
-      if (mounted) { setState(() => selectedCollection = null); }
-    });
+    if (ok == true) {
+      await _run(() async {
+        await repo.deleteCollection(c.id);
+        if (mounted) { setState(() => selectedCollection = null); }
+      });
+    }
   }
   Future<void> _search() async {
     if (search.text.trim().isEmpty) {setState(() => hits = null);return;}
