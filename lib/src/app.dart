@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'core/ai/cloud_ai_engine.dart';
 import 'core/ai/llama_native_engine.dart';
+import 'core/chat/chat_session_controller.dart';
 import 'core/updates/baboon_update_service.dart';
 import 'features/chat/chat_screen.dart';
 import 'features/home/home_screen.dart';
@@ -127,7 +128,10 @@ class _MainShellState extends State<MainShell> {
         ])),
       const Divider(height: 1),
       _drawerItem(Icons.home_outlined, 'Главная', () => _go(0), active: index == 0),
-      _drawerItem(Icons.add_comment_outlined, 'Новый чат', () => _go(1)),
+      _drawerItem(Icons.add_comment_outlined, 'Новый чат', () {
+        ChatSessionController.instance.newChat();
+        _go(1);
+      }),
       _drawerItem(Icons.auto_awesome_outlined, 'Инструменты', () => _go(2), active: index == 2),
       _drawerItem(Icons.menu_book_outlined, 'База знаний', () => _go(3), active: index == 3),
       _drawerItem(Icons.download_outlined, 'Загрузки', () => baboonSoon(context,
