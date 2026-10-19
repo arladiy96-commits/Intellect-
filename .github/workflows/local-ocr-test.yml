@@ -58,7 +58,10 @@ jobs:
           # a version compatible with that SDK (new transitive 1.19 needs API 37).
           grep -q 'coreKtx = "1.18.0"' gradle/libs.versions.toml
           sed -i 's/coreKtx = "1.18.0"/coreKtx = "1.17.0"/' gradle/libs.versions.toml
-          printf '%s\n' 'configurations.configureEach {' '  resolutionStrategy.force("androidx.core:core:1.17.0", "androidx.core:core-ktx:1.17.0")' '}' >> app/build.gradle.kts
+          # Activity 1.13 depends on newer PiP interfaces unavailable in SDK-36-compatible Core.
+          grep -q 'activityCompose = "1.13.0"' gradle/libs.versions.toml
+          sed -i 's/activityCompose = "1.13.0"/activityCompose = "1.12.4"/' gradle/libs.versions.toml
+          printf '%s\n' 'configurations.configureEach {' '  resolutionStrategy.force("androidx.core:core:1.17.0", "androidx.core:core-ktx:1.17.0")' '  resolutionStrategy.force("androidx.activity:activity:1.12.4", "androidx.activity:activity-compose:1.12.4", "androidx.activity:activity-ktx:1.12.4")' '}' >> app/build.gradle.kts
 
       - name: Build Android debug APK (test only)
         shell: bash
