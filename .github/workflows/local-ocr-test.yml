@@ -58,12 +58,7 @@ jobs:
           # a version compatible with that SDK (new transitive 1.19 needs API 37).
           grep -q 'coreKtx = "1.18.0"' gradle/libs.versions.toml
           sed -i 's/coreKtx = "1.18.0"/coreKtx = "1.16.0"/' gradle/libs.versions.toml
-          cat >> app/build.gradle.kts <<'EOF'
-
-configurations.configureEach {
-  resolutionStrategy.force("androidx.core:core:1.16.0", "androidx.core:core-ktx:1.16.0")
-}
-EOF
+          printf '%s\n' 'configurations.configureEach {' '  resolutionStrategy.force("androidx.core:core:1.16.0", "androidx.core:core-ktx:1.16.0")' '}' >> app/build.gradle.kts
 
       - name: Build Android debug APK (test only)
         shell: bash
