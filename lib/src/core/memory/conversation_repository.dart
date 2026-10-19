@@ -281,7 +281,7 @@ class LocalConversationRepository implements ConversationRepository {
 
   Future<T> _serial<T>(Future<T> Function() action) {
     final result = _writes.catchError((Object _) {}).then((_) => action());
-    _writes = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    _writes = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     return result;
   }
 

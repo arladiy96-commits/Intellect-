@@ -75,8 +75,14 @@ class ChatSessionController extends ChangeNotifier {
     required ChatReplyGateway gateway,
     required BaboonCore core,
     required ChatMemoryGateway memory,
-  }) : _repository = repository, _gateway = gateway,
-       _core = core, _memory = memory;
+  }) : this._internal(repository, gateway, core, memory);
+
+  ChatSessionController._internal(
+    this._repository,
+    this._gateway,
+    this._core,
+    this._memory,
+  );
 
   static final ChatSessionController instance = ChatSessionController(
     repository: LocalConversationRepository.instance,
