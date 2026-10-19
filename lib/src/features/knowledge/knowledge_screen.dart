@@ -189,10 +189,12 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
     final id = _collectionId;
     await _run(() async {
       await _repo.deleteCollection(id);
-      if (mounted) setState(() {
-        _collectionId = KnowledgeRepository.generalId;
-        _hits = null;
-      });
+      if (mounted) {
+        setState(() {
+          _collectionId = KnowledgeRepository.generalId;
+          _hits = null;
+        });
+      }
     });
   }
 
@@ -225,15 +227,19 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) return Scaffold(
-      appBar: AppBar(title: const Text('База знаний')),
-      body: Center(child: Padding(padding: const EdgeInsets.all(24),
-        child: Text('Не удалось открыть базу: $_error'))),
-    );
-    if (!_ready) return Scaffold(
-      appBar: AppBar(title: const Text('База знаний')),
-      body: const Center(child: CircularProgressIndicator()),
-    );
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('База знаний')),
+        body: Center(child: Padding(padding: const EdgeInsets.all(24),
+          child: Text('Не удалось открыть базу: $_error'))),
+      );
+    }
+    if (!_ready) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('База знаний')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
     final currentDocs = _repo.documents.where((d) => d.collectionId == _collectionId).toList();
     final count = _repo.documents.length;
     return Scaffold(
