@@ -173,7 +173,9 @@ class KnowledgeRepository extends ChangeNotifier {
     final name = title.trim();
     final text = content.trim();
     if (name.isEmpty || name.length > 160 || text.isEmpty ||
-        text.length > maxDocumentCharacters) throw ArgumentError('Проверь размер и содержимое');
+        text.length > maxDocumentCharacters) {
+      throw ArgumentError('Проверь размер и содержимое');
+    }
     _documents[index] = KnowledgeDocument(
       id: previous.id, collectionId: previous.collectionId,
       title: name, content: text, sourceName: previous.sourceName,
